@@ -20,7 +20,7 @@ jobs:
         # ======== TEST: single /24 subnet ========
         classa: [8]
         classb: [8]
-        classc: [8]
+        classc: [4,8]
 
     steps:
       - uses: actions/checkout@v4
