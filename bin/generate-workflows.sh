@@ -4,7 +4,7 @@ set -euo pipefail
 outdir=".github/workflows"
 mkdir -p "$outdir"
 
-classb_list=$(seq -s, 0 4 252)
+classb_list=$(seq -s, 0 8 248)
 classb_list="${classb_list%,}"
 
 for a in $(seq 0 255); do
