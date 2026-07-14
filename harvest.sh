@@ -29,12 +29,12 @@ for classb in {0..255}; do
         # single /24 subnet
         nmap -sn -n -T5 --max-rtt-timeout 200ms \
             -oG - "$classa.$classb.$classc_only.0/24" \
-            2>/dev/null | grep '/Host$' | awk '{print $2",true"}' >> "$outfile" || true
+            2>/dev/null >> "$outfile" || true
     else
         # whole /16 subnet
         nmap -sn -n -T5 --max-rtt-timeout 200ms \
             --min-hostgroup 65536 \
             -oG - "$classa.$classb.0.0/16" \
-            2>/dev/null | grep '/Host$' | awk '{print $2",true"}' >> "$outfile" || true
+            2>/dev/null >> "$outfile" || true
     fi
 done
