@@ -1,47 +1,36 @@
 #!/bin/bash
+set -euo pipefail
 
 classa=$1
-classb=$2
+# optional: if classb is given, scan only that /16 subnet
+classb_only="${2:-}"
 
+outdir="results"
+mkdir -p "$outdir"
+outfile="$outdir/$classa.txt"
+> "$outfile"
 
-file="$classa.$classb.txt"
+re='^[0-9]+$'
 
-for classc in {0..255}
-do
-    DATE_WITH_TIME=`date "+%Y-%m-%d-%H:%M:%S"`
-    ip="$classa.$classb.$classc.0"
-    echo $DATE_WITH_TIME - $ip
-    for classd in {0..255}
-    do
-    ip="$classa.$classb.$classc.$classd"
-
-    if [[ $classa -eq 10 || $classa -eq 172 && $classb -eq 16 || $classa -eq 192 && $classb -eq 168 ]] ; then
-        # skip RFC 1918
-        # 10.0.0.0 – 10.255.255.255  (10/8 prefix)
-        # 172.16.0.0 – 172.31.255.255  (172.16/12 prefix)
-        # 192.168.0.0 – 192.168.255.255 (192.168/16 prefix)
-        :
-    elif [[ $classa -eq 127 ]] ; then
-        # skip local
-        # 127.0.0.0–127.255.255.255 
-        # 240.0.0.0–255.255.255.254 
-        :
-    elif [[ $classa -ge 224 ]] ; then
-        # skip reserved
-        # 224.0.0.0–239.255.255.255 
-        # 240.0.0.0–255.255.255.254 
-        :
-    else
-        ping -c 1 -q -W 1 $ip 2>/dev/null 1>/dev/null
-        rc=$?
-
-        if [[ $rc -eq 0 ]] ; then
-            # good ping
-            echo $ip,true >> $file
-        else
-            # bad ping
-            echo $ip,false >> $file
-        fi
+for classb in {0..255}; do
+    # if a specific classb was requested, skip others
+    if [[ -n "$classb_only" ]]; then
+        [[ "$classb" != "$classb_only" ]] && continue
     fi
-    done
+
+    # skip RFC 1918
+    [[ $classa -eq 10 ]] && continue
+    [[ $classa -eq 172 && $classb -ge 16 && $classb -le 31 ]] && continue
+    [[ $classa -eq 192 && $classb -eq 168 ]] && continue
+
+    # skip loopback
+    [[ $classa -eq 127 ]] && continue
+
+    # skip multicast / reserved
+    [[ $classa -ge 224 ]] && continue
+
+    # generate all 65536 IPs and pipe to fping
+    for classc in {0..255}; do
+        printf "$classa.$classb.$classc.%d\n" {0..255}
+    done | fping -a -r 0 -t 100 2>/dev/null | awk '{print $1",true"}' >> "$outfile"
 done
