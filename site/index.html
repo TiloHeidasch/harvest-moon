@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Harvest Moon — IPv4 Heatmap</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Harvest Moon</h1>
+    <p>
+      IPv4 Gesamtübersicht — ein Pixel entspricht einem /24, Farbe = Anzahl live Hosts.
+      Layout (AGENTS.md): 256 Class A in 4 Quadranten à 8×8 Class A, daraus 4096×4096 Pixel.
+    </p>
+    <div id="status">…</div>
+  </header>
+  <main>
+    <div class="canvas-wrap">
+      <canvas id="map"></canvas>
+    </div>
+    <div class="legend">
+      <span>0</span>
+      <div class="bar"></div>
+      <span>255 Hosts / /24</span>
+    </div>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

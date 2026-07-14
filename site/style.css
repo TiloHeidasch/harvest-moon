@@ -1,0 +1,50 @@
+:root { --bg: #0a0a12; }
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: #cdd;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+header { padding: 1rem 1.25rem; }
+h1 { margin: 0 0 .25rem; font-size: 1.25rem; }
+header p { margin: .25rem 0; max-width: 70ch; color: #9aa; line-height: 1.4; }
+#status { margin-top: .5rem; color: #7fd; font-size: .85rem; min-height: 1.2em; }
+
+main { padding: 0 1.25rem 2rem; }
+
+.canvas-wrap {
+  width: 100%;
+  overflow: auto;
+  border: 1px solid #222;
+  background: #06060c;
+}
+
+canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  margin-top: 1rem;
+  max-width: 460px;
+}
+
+.legend .bar {
+  height: 14px;
+  flex: 1;
+  border-radius: 3px;
+  background: linear-gradient(90deg,
+    rgb(0,0,90), rgb(0,120,255), rgb(0,230,120), rgb(255,230,0), rgb(255,50,0));
+}
+
+.legend span { font-size: .8rem; color: #9aa; }
