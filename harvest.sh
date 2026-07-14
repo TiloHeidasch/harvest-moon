@@ -25,6 +25,8 @@ for ((classb=classb_start; classb<=classb_end; classb++)); do
     # skip multicast / reserved
     [[ $classa -ge 224 ]] && continue
 
+    echo "scanning $classa.$classb.0.0/16"
+
     # scan /16 subnet → group by /24, count per /24
     nmap -sn -n -T5 --max-rtt-timeout 200ms \
         --min-hostgroup 65536 \
