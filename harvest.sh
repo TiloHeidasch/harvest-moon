@@ -32,14 +32,17 @@ for ((classb=classb_start; classb<=classb_end; classb++)); do
         2>/dev/null | awk '/Status: Up/{split($2,a,"."); k=a[1]"."a[2]"."a[3]".0"; c[k]++} END{for(k in c) print k","c[k]}' >> "$outfile" || true
 done
 
-# generate 16x256 PNG (16 classb × 256 classc)
+# generate 256x16 PNG (16 classb × 256 classc, 16×16 per classb)
 if [[ -s "$outfile" ]] && command -v convert &>/dev/null; then
     awk -F'[.,]' -v a="$classa" -v start="$classb_start" '
         $1==a && $2>=start && $2<start+16 {
             cb = $2 - start
             cc = $3
-            pixel[cc * 16 + cb] = $5
+            bx = cb
+            cx = cc % 16
+            cy = int(cc / 16)
+            pixel[cy * 256 + (bx * 16 + cx)] = $5
         }
         END { for(i=0;i<4096;i++) printf "%c", (pixel[i]+0) }
-    ' "$outfile" | convert -depth 8 -size 16x256 gray:- "$pngfile"
+    ' "$outfile" | convert -depth 8 -size 256x16 gray:- "$pngfile"
 fi

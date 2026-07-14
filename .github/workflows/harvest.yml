@@ -48,7 +48,7 @@ jobs:
           done
           mkdir -p results
           if [ -n "$imgs" ]; then
-            convert $imgs +append "results/${{ matrix.classa }}.png"
+            convert $imgs -append "results/${{ matrix.classa }}.png"
             echo "combined $(echo $imgs | wc -w) blocks into results/${{ matrix.classa }}.png"
           else
             echo "no blocks found for classa ${{ matrix.classa }}"
