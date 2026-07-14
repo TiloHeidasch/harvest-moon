@@ -7,22 +7,19 @@ jobs:
   benchmark:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq fping nmap
 
-      - name: fping /16
-        run: |
-          START=$(date +%s)
-          seq 0 255 | xargs -P 32 -I{} bash -c \
-            "fping -g 8.8.{}.0/24 -a -r 0 -t 100 2>/dev/null || true" \
-            > /tmp/results-fping.txt
-          cat /tmp/results-fping.txt
-          echo "fping $(( $(date +%s) - START ))s"
-          echo "count: $(wc -l < /tmp/results-fping.txt)"
+      - name: ping 8.8.8.8 (ICMP check)
+        run: ping -c 3 -W 2 8.8.8.8
 
-      - name: nmap /16
+      - name: fping 8.8.8.0/24
         run: |
           START=$(date +%s)
-          nmap -sn -n -T5 --max-rtt-timeout 200ms --min-hostgroup 4096 8.8.0.0/16 2>/dev/null | tee /tmp/results-nmap.txt
+          fping -g 8.8.8.0/24 -a -r 0 -t 200 2>/dev/null | sort
+          echo "fping $(( $(date +%s) - START ))s"
+
+      - name: nmap 8.8.8.0/24
+        run: |
+          START=$(date +%s)
+          nmap -sn -n -T5 --max-rtt-timeout 200ms 8.8.8.0/24
           echo "nmap $(( $(date +%s) - START ))s"
-          echo "count: $(grep -c 'Host is up' /tmp/results-nmap.txt 2>/dev/null)"
