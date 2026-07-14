@@ -29,8 +29,8 @@ for classb in {0..255}; do
     # skip multicast / reserved
     [[ $classa -ge 224 ]] && continue
 
-    # generate all 65536 IPs and pipe to fping
-    for classc in {0..255}; do
-        printf "$classa.$classb.$classc.%d\n" {0..255}
-    done | (fping -a -r 0 -t 100 2>/dev/null || true) | awk '{print $1",true"}' >> "$outfile"
+    # scan /16 by running 256 parallel /24 sub-scans
+    seq 0 255 | xargs -P 32 -I{} bash -c \
+        "fping -g $classa.$classb.{}.0/24 -a -r 0 -t 100 2>/dev/null || true" \
+        2>/dev/null | awk '{print $1",true"}' >> "$outfile"
 done

@@ -13,9 +13,10 @@ jobs:
       - name: fping /16
         run: |
           START=$(date +%s)
-          for c in {0..255}; do
-            printf "8.8.%d.%d\n" $c {0..255}
-          done | fping -a -r 0 -t 100 2>/dev/null | tee /tmp/results-fping.txt
+          seq 0 255 | xargs -P 32 -I{} bash -c \
+            "fping -g 8.8.{}.0/24 -a -r 0 -t 100 2>/dev/null || true" \
+            > /tmp/results-fping.txt
+          cat /tmp/results-fping.txt
           echo "fping $(( $(date +%s) - START ))s"
           echo "count: $(wc -l < /tmp/results-fping.txt)"
 
