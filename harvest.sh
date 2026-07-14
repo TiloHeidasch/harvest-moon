@@ -25,12 +25,13 @@ for ((classb=classb_start; classb<=classb_end; classb++)); do
     # skip multicast / reserved
     [[ $classa -ge 224 ]] && continue
 
-    echo "scanning $classa.$classb.0.0/16"
+    echo "scanning $classa.$classb.0.0/20"
 
-    # scan /16 subnet → group by /24, count per /24
+    # scan /20 subnet → group by /24, count per /24
     nmap -sn -n -T5 --max-rtt-timeout 200ms \
+        --max-retries 1 --host-timeout 300ms \
         --min-hostgroup 65536 \
-        -oG - "$classa.$classb.0.0/16" \
+        -oG - "$classa.$classb.0.0/20" \
         2>/dev/null | awk '/Status: Up/{split($2,a,"."); k=a[1]"."a[2]"."a[3]".0"; c[k]++} END{for(k in c) print k","c[k]}' >> "$outfile" || true
 done
 
