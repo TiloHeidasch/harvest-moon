@@ -32,6 +32,8 @@ jobs:
   aggregate:
     needs: scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v7
@@ -41,7 +43,7 @@ jobs:
           path: downloaded/
       - run: |
           mkdir -p results
-          cat downloaded/results/*.txt | sort -t. -k2,2n -k3,3n > results/$a.txt
+          find downloaded -name '*.txt' -exec cat {} + | sort -t. -k2,2n -k3,3n > results/$a.txt
       - uses: actions/upload-artifact@v7
         with:
           name: classa-$a
@@ -56,10 +58,10 @@ jobs:
           git checkout -B result origin/result 2>/dev/null || git checkout -b result
           git add results/$a.txt
           git commit -m "aggregate class A $a" || echo "nothing new"
-          for i in 1 2 3 4 5 6 7 8; do
+          for i in \$(seq 1 12); do
             git pull --rebase origin result 2>/dev/null
-            git push origin result && break
-            sleep 2
+            git push origin "HEAD:refs/heads/result" && break
+            sleep 3
           done
 EOF
 done
