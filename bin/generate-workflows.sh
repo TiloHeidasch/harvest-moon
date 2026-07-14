@@ -4,7 +4,7 @@ set -euo pipefail
 outdir=".github/workflows"
 mkdir -p "$outdir"
 
-classb_list=$(seq -s, 0 255)
+classb_list=$(seq -s, 0 2 254)
 classb_list="${classb_list%,}"
 
 for a in $(seq 0 255); do
@@ -27,7 +27,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: scan-$a-\${{ matrix.classb }}
-          path: results/$a.\${{ matrix.classb }}.txt
+          path: results/
 EOF
 done
 
