@@ -64,13 +64,43 @@ async function load() {
   const status = document.getElementById("status");
   status.textContent = "lade manifest…";
 
-  const manifestResp = await fetch(DATA_BASE + "manifest.json");
-  const manifest = await manifestResp.json();
+  let manifest;
+  try {
+    const manifestResp = await fetch(DATA_BASE + "manifest.json");
+    if (!manifestResp.ok) {
+      status.textContent =
+        `Keine Daten auf dem 'results'-Branch (manifest.json HTTP ${manifestResp.status}). ` +
+        `Erzeuge mit tools/csv2bin.py die Dateien <classa>.bin + manifest.json und pushe sie dorthin.`;
+      return;
+    }
+    const text = await manifestResp.text();
+    try {
+      manifest = JSON.parse(text);
+    } catch (e) {
+      status.textContent = `manifest.json ist kein gültiges JSON: ${e.message}`;
+      console.error("manifest body:", text);
+      return;
+    }
+  } catch (e) {
+    status.textContent = "Netzwerkfehler beim Laden von manifest.json: " + e;
+    return;
+  }
+
+  if (!Array.isArray(manifest)) {
+    status.textContent = "manifest.json muss ein JSON-Array von Class-A-Nummern sein.";
+    return;
+  }
+
   status.textContent = `lade ${manifest.length} Class-A-Binärdateien…`;
 
   let done = 0;
   await Promise.all(manifest.map(async (classa) => {
     const resp = await fetch(DATA_BASE + classa + ".bin");
+    if (!resp.ok) {
+      console.warn(`übersprungen (HTTP ${resp.status}): ${classa}.bin`);
+      done++;
+      return;
+    }
     const buf = new Uint8Array(await resp.arrayBuffer());
     const [gx, gy] = classAOffset(classa);
 
