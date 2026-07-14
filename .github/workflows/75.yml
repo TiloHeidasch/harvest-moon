@@ -2,6 +2,8 @@ name: Scan Class A 75
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *'
 
 jobs:
   scan:
