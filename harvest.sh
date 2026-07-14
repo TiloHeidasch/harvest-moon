@@ -2,21 +2,17 @@
 set -euo pipefail
 
 classa=$1
-# optional: if classb is given, scan only that /16 subnet
 classb_only="${2:-}"
+classc_only="${3:-}"
 
 outdir="results"
 mkdir -p "$outdir"
 outfile="$outdir/$classa.txt"
 > "$outfile"
 
-re='^[0-9]+$'
-
 for classb in {0..255}; do
-    # if a specific classb was requested, skip others
-    if [[ -n "$classb_only" ]]; then
-        [[ "$classb" != "$classb_only" ]] && continue
-    fi
+    # optional /16 restriction
+    [[ -n "$classb_only" && "$classb" != "$classb_only" ]] && continue
 
     # skip RFC 1918
     [[ $classa -eq 10 ]] && continue
@@ -29,8 +25,16 @@ for classb in {0..255}; do
     # skip multicast / reserved
     [[ $classa -ge 224 ]] && continue
 
-    # scan /16 by running 256 parallel /24 sub-scans
-    seq 0 255 | xargs -P 32 -I{} bash -c \
-        "fping -g $classa.$classb.{}.0/24 -a -r 0 -t 100 2>/dev/null || true" \
-        2>/dev/null | awk '{print $1",true"}' >> "$outfile"
+    if [[ -n "$classc_only" ]]; then
+        # single /24 subnet
+        nmap -sn -n -T5 --max-rtt-timeout 200ms \
+            -oG - "$classa.$classb.$classc_only.0/24" \
+            2>/dev/null | grep '/Host$' | awk '{print $2",true"}' >> "$outfile"
+    else
+        # whole /16 subnet
+        nmap -sn -n -T5 --max-rtt-timeout 200ms \
+            --min-hostgroup 65536 \
+            -oG - "$classa.$classb.0.0/16" \
+            2>/dev/null | grep '/Host$' | awk '{print $2",true"}' >> "$outfile"
+    fi
 done
