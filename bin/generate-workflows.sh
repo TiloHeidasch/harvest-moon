@@ -21,7 +21,7 @@ jobs:
       matrix:
         classb: [$classb_list]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap
       - run: ./scan-classb.sh $a \${{ matrix.classb }}
       - uses: actions/upload-artifact@v7
