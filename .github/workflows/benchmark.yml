@@ -7,7 +7,10 @@ jobs:
   benchmark:
     runs-on: ubuntu-latest
     steps:
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq fping nmap
+
+      - name: fping 8.8.8.8 (ICMP double-check)
+        run: fping 8.8.8.8 2>&1 || true
 
       - name: nmap 8.8.8.0/24
         run: |
