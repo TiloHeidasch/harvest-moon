@@ -22,12 +22,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap imagemagick
       - run: ./harvest.sh ${{ matrix.classa }} 8
       - uses: actions/upload-artifact@v4
         with:
-          name: results-${{ matrix.classa }}.8
-          path: results/${{ matrix.classa }}.txt
+          name: results-${{ matrix.classa }}
+          path: results/
 
   aggregate:
     needs: harvest

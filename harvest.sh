@@ -41,3 +41,11 @@ for classb in {0..255}; do
             2>/dev/null | awk '/Status: Up/{split($2,a,"."); k=a[1]"."a[2]"."a[3]".0"; c[k]++} END{for(k in c) print k","c[k]}' >> "$outfile" || true
     fi
 done
+
+# generate 256x256 PNG from the collected /24 counts
+if [[ -s "$outfile" ]] && command -v convert &>/dev/null; then
+    awk -F'[.,]' -v a="$classa" '
+        $1==a { pixel[$2*256+$3] = $5 }
+        END   { for(i=0;i<65536;i++) printf "%c", (pixel[i]+0) }
+    ' "$outfile" | convert -depth 8 -size 256x256 gray:- "$outdir/$classa.png"
+fi
