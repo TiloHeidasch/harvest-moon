@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap imagemagick
       - run: ./harvest.sh ${{ matrix.classa }} ${{ matrix.block }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: scan-${{ matrix.classa }}-${{ matrix.block }}
           path: results/
@@ -35,7 +35,7 @@ jobs:
         classa: [8]
 
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           pattern: scan-${{ matrix.classa }}-*
           merge-multiple: true
@@ -52,7 +52,7 @@ jobs:
           else
             echo "no blocks found for classa ${{ matrix.classa }}"
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: classa-${{ matrix.classa }}
           path: results/${{ matrix.classa }}.png
