@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap imagemagick
-      - run: ./harvest.sh ${{ matrix.classa }} 8
+      - run: ./harvest.sh ${{ matrix.classa }} 0-15
       - uses: actions/upload-artifact@v4
         with:
           name: results-${{ matrix.classa }}

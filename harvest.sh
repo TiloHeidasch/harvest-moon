@@ -2,18 +2,28 @@
 set -euo pipefail
 
 classa=$1
-classb_only="${2:-}"
+classb_spec="${2:-}"
 shift 2
 classc_list=("$@")
+
+# parse classb spec: "N" (single), "N-M" (range), or empty (all)
+if [[ "$classb_spec" == *-* ]]; then
+    classb_start="${classb_spec%-*}"
+    classb_end="${classb_spec#*-}"
+elif [[ -n "$classb_spec" ]]; then
+    classb_start="$classb_spec"
+    classb_end="$classb_spec"
+else
+    classb_start=0
+    classb_end=255
+fi
 
 outdir="results"
 mkdir -p "$outdir"
 outfile="$outdir/$classa.txt"
 > "$outfile"
 
-for classb in {0..255}; do
-    # optional /16 restriction
-    [[ -n "$classb_only" && "$classb" != "$classb_only" ]] && continue
+for ((classb=classb_start; classb<=classb_end; classb++)); do
 
     # skip RFC 1918
     [[ $classa -eq 10 ]] && continue
