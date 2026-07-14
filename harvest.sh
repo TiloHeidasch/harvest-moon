@@ -32,5 +32,5 @@ for classb in {0..255}; do
     # generate all 65536 IPs and pipe to fping
     for classc in {0..255}; do
         printf "$classa.$classb.$classc.%d\n" {0..255}
-    done | fping -a -r 0 -t 100 2>/dev/null | awk '{print $1",true"}' >> "$outfile"
+    done | (fping -a -r 0 -t 100 2>/dev/null || true) | awk '{print $1",true"}' >> "$outfile"
 done

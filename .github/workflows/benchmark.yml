@@ -12,13 +12,13 @@ jobs:
 
       - name: fping /16
         run: |
-          echo "fping start: $(date +%s)"
+          START=$(date +%s)
           seq 0 255 | xargs -P 32 -I{} bash -c \
-            "fping -g 8.8.{}.0/24 -a -r 0 -t 100 2>/dev/null"
-          echo "fping done: $(date +%s)"
+            "(fping -g 8.8.{}.0/24 -a -r 0 -t 100 2>/dev/null || true)"
+          echo "fping $(( $(date +%s) - START ))s"
 
       - name: nmap /16
         run: |
-          echo "nmap start: $(date +%s)"
+          START=$(date +%s)
           nmap -sn -n -T5 --max-rtt-timeout 200ms --min-hostgroup 4096 8.8.0.0/16 2>/dev/null
-          echo "nmap done: $(date +%s)"
+          echo "nmap $(( $(date +%s) - START ))s"
