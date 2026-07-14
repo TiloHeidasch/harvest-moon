@@ -5,26 +5,23 @@ Internet-Ping-Sweeper. Scannt IPv4-Adressräume mit nmap und erzeugt
 
 ## harvest.sh
 
-Nimmt eine Class A (0–255) und optional eine Class-B-Spezifikation:
+Nimmt eine Class A (0–255) und einen Block (0–15, jeder = 16 class B):
 
 ```bash
-./harvest.sh 8         # alle 256 class B in 8.x.x.x
-./harvest.sh 8 8       # nur 8.8.0.0/16
-./harvest.sh 8 0-15    # 8.0.0.0/16 – 8.15.0.0/16
-./harvest.sh 8 8 8     # nur 8.8.8.0/24
-./harvest.sh 8 8 8 9 10  # mehrere /24
+./harvest.sh 8 0     # scannt 8.0.0.0/16 – 8.15.0.0/16, erzeugt 8.0.png
+./harvest.sh 8 1     # scannt 8.16.0.0/16 – 8.31.0.0/16, erzeugt 8.1.png
 ```
 
 Reservierte Bereiche (10/8, 127/8, 172.16/12, 192.168/16, 224+/3) werden
 übersprungen.
 
 **Output** (in `results/`):
-- `$classa.txt` — `/24-Counts` (`classb.classc.0,anzahl`)
-- `$classa.png` — 256×256 Graustufen-PNG
+- `$classa.$block.txt` — `/24-Counts` (`classa.classb.classc.0,anzahl`)
+- `$classa.$block.png` — 16×256 Graustufen-PNG
 
 ## CI (`.github/workflows/harvest.yml`)
 
-Wird getriggert durch `push` auf `main` oder manuell via `workflow_dispatch`.
+Wird getriggert durch `workflow_dispatch`.
 
 Nutzt `nmap -sn` (TCP-SYN, da ICMP auf GitHub blockiert ist) und
 `imagemagick` für PNG-Generierung.
@@ -33,12 +30,16 @@ Nutzt `nmap -sn` (TCP-SYN, da ICMP auf GitHub blockiert ist) und
 
 ```yaml
 classa: [8]
+block: [0,1]
 ```
-`./harvest.sh 8 0-15` — scannt die ersten 16 class-B-Netze von 8.x.x.x.
+2 Jobs, scannen 8.0.0.0/16 – 8.31.0.0/16.
 
 ### Vollbetrieb (vorbereitet, auskommentiert)
 
 ```yaml
-classa: [0,1,2,…,255]
+classa: [0,1,2,…,9,11,…,126,128,…,223]   # 222 Werte (reservierte ausgelassen)
+block: [0,1,…,15]                         # 16 Werte
 ```
-256 Jobs, jeder scannt eine Class A und erzeugt ein PNG.
+222 × 16 = 3552 Jobs, jeder scannt einen Block und erzeugt ein 16×256-PNG.
+Danach kombiniert ein **render**-Job pro Class A die 16 Blöcke zu einem
+256×256-PNG.
