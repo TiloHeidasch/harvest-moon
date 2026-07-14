@@ -3,7 +3,8 @@ set -euo pipefail
 
 classa=$1
 classb_only="${2:-}"
-classc_only="${3:-}"
+shift 2
+classc_list=("$@")
 
 outdir="results"
 mkdir -p "$outdir"
@@ -25,11 +26,13 @@ for classb in {0..255}; do
     # skip multicast / reserved
     [[ $classa -ge 224 ]] && continue
 
-    if [[ -n "$classc_only" ]]; then
-        # single /24 subnet → report count for that /24
-        nmap -sn -n -T5 --max-rtt-timeout 200ms \
-            -oG - "$classa.$classb.$classc_only.0/24" \
-            2>/dev/null | awk '/Status: Up/{c++} END{print "'"$classa.$classb.$classc_only.0"'"","c}' >> "$outfile" || true
+    if [[ ${#classc_list[@]} -gt 0 ]]; then
+        # one or more /24 subnets → report count per /24
+        for classc_val in "${classc_list[@]}"; do
+            nmap -sn -n -T5 --max-rtt-timeout 200ms \
+                -oG - "$classa.$classb.$classc_val.0/24" \
+                2>/dev/null | awk '/Status: Up/{c++} END{print "'"$classa.$classb.$classc_val.0"'"","c}' >> "$outfile" || true
+        done
     else
         # whole /16 subnet → group by /24, report count per /24
         nmap -sn -n -T5 --max-rtt-timeout 200ms \
