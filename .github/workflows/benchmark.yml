@@ -13,12 +13,15 @@ jobs:
       - name: fping /16
         run: |
           START=$(date +%s)
-          seq 0 255 | xargs -P 32 -I{} bash -c \
-            "(fping -g 8.8.{}.0/24 -a -r 0 -t 100 2>/dev/null || true)"
+          for c in {0..255}; do
+            printf "8.8.%d.%d\n" $c {0..255}
+          done | fping -a -r 0 -t 100 2>/dev/null | tee /tmp/results-fping.txt
           echo "fping $(( $(date +%s) - START ))s"
+          echo "count: $(wc -l < /tmp/results-fping.txt)"
 
       - name: nmap /16
         run: |
           START=$(date +%s)
-          nmap -sn -n -T5 --max-rtt-timeout 200ms --min-hostgroup 4096 8.8.0.0/16 2>/dev/null
+          nmap -sn -n -T5 --max-rtt-timeout 200ms --min-hostgroup 4096 8.8.0.0/16 2>/dev/null | tee /tmp/results-nmap.txt
           echo "nmap $(( $(date +%s) - START ))s"
+          echo "count: $(grep -c 'Host is up' /tmp/results-nmap.txt 2>/dev/null)"
