@@ -17,3 +17,36 @@ jobs:
         with:
           name: scan-250-${{ matrix.classb }}
           path: results/
+
+  aggregate:
+    needs: scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: scan-250-*
+          merge-multiple: true
+          path: downloaded/
+      - run: |
+          mkdir -p results
+          cat downloaded/results/*.txt | sort -t. -k2,2n -k3,3n > results/250.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: classa-250
+          path: results/250.txt
+      - name: commit to result branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "github-actions"
+          git fetch origin result || true
+          git checkout -B result origin/result 2>/dev/null || git checkout -b result
+          git add results/250.txt
+          git commit -m "aggregate class A 250" || echo "nothing new"
+          for i in 1 2 3 4 5 6 7 8; do
+            git pull --rebase origin result 2>/dev/null
+            git push origin result && break
+            sleep 2
+          done
