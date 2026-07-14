@@ -27,6 +27,7 @@ jobs:
           path: results/
 
   render:
+    needs: scan
     if: always()
     runs-on: ubuntu-latest
     strategy:
