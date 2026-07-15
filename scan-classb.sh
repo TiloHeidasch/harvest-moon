@@ -3,7 +3,8 @@ set -euo pipefail
 
 classa=$1
 classb_start=$2
-classb_end=$((classb_start + 7))
+classb_count=${3:-8}
+classb_end=$((classb_start + classb_count - 1))
 
 outdir="results"
 mkdir -p "$outdir"
@@ -11,7 +12,7 @@ mkdir -p "$outdir"
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
 
-echo "scanning $classa.$classb_start.0.0/16 – $classa.$classb_end.0.0/16 (2048 parallel /24)"
+echo "scanning $classa.$classb_start.0.0/16 – $classa.$classb_end.0.0/16 ($((classb_count * 256)) parallel /24)"
 
 for classb in $(seq $classb_start $classb_end); do
     [[ $classa -eq 10 ]] && continue

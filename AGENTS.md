@@ -6,15 +6,15 @@ Graustufen-PNGs (ein Pixel pro /24, Helligkeit = Host-Anzahl).
 ## Architektur (Überblick)
 
 - **256 Workflows** (`.github/workflows/0.yml` … `255.yml`), einer pro Class A (0–255).
-- Jeder Workflow hat eine Matrix aus **32 Jobs** (Class-B-Startwerte `0,8,16,…,248`).
-- Jeder Job ruft `scan-classb.sh <classa> <classb_start>` auf → scannt **8 Class B** (`classb_start` … `classb_start+7`).
+- Jeder Workflow hat eine Matrix aus **16 Jobs** (Class-B-Startwerte `0,16,32,…,240`).
+- Jeder Job ruft `scan-classb.sh <classa> <classb_start> [<count>]` auf → scannt **16 Class B** (`classb_start` … `classb_start+15`). `count` ist optional (Default 8).
 - Jeder Class-B-Scan wird in **256 parallele `/24`-Scans** zerlegt (`&` + `wait`).
-  → **2048 parallele nmap-Prozesse** pro Job.
+  → **4096 parallele nmap-Prozesse** pro Job.
 - Ergebnis pro Job: 8 Dateien `results/<classa>.<classb>.txt` (eine pro Class B).
 - **Aggregate-Job** (im gleichen Workflow, `needs: scan`): lädt alle Scan-Artifacts,
   konkateniert + sortiert sie zu `results/<classa>.txt` und pusht auf den `result`-Branch.
 
-**Performance:** ~1:24 pro Job (8 Class B via 2048 parallele `/24`), also
+**Performance:** ~1:24 pro Job (16 Class B via 4096 parallele `/24`), also
 ~3 min pro Class A bei 20er-Concurrency.
 
 ## scan-classb.sh
@@ -25,7 +25,7 @@ Graustufen-PNGs (ein Pixel pro /24, Helligkeit = Host-Anzahl).
 ```
 
 Zerlegt das `/16` (65536 IPs) in 256 × `/24` (je 256 IPs) und feuert
-sie parallel ab. Jeder Job deckt 8 Class B ab.
+sie parallel ab. Jeder Job deckt 16 Class B ab.
 
 Reservierte Bereiche (10/8, 127/8, 172.16/12, 192.168/16, 224+/3) werden
 übersprungen.
@@ -53,7 +53,7 @@ Template einfach neu ausführen:
 ```
 
 Jede `N.yml` enthält:
-- Matrix `classb: [0,8,16,…,248]` (32 Jobs)
+- Matrix `classb: [0,16,32,…,240]` (16 Jobs)
 - `scan`-Job: ruft `scan-classb.sh N <classb_start>` auf
 - `aggregate`-Job: mergt Artifacts → `results/N.txt` → push auf `result`-Branch
 
@@ -106,8 +106,8 @@ Nutzt `nmap -sn` (TCP-SYN, da ICMP auf GitHub blockiert ist) und
 `imagemagick` für PNG-Generierung.
 
 ### Scan-Modus
-256 Workflows (0.yml – 255.yml), jeder mit 32 Matrix-Jobs.
-Jeder Job scannt 8 Class B via 2048 parallele `/24`-Scans.
+256 Workflows (0.yml – 255.yml), jeder mit 16 Matrix-Jobs.
+Jeder Job scannt 16 Class B via 4096 parallele `/24`-Scans.
 → **~1:24 pro Job**, also ~3 min pro Class A bei 20er-Concurrency.
 
 ### Aggregation (`aggregate`-Job pro Workflow)
