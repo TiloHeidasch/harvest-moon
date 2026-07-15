@@ -51,16 +51,6 @@ jobs:
         run: |
           mkdir -p /tmp/render-tool
           cp tools/csv2bin.py /tmp/render-tool/
-      - name: build results/<A>.txt
-        run: |
-          mkdir -p results
-          for ca in $(seq -s ' ' "$a_start" 1 "$a_end"); do
-            find downloaded -maxdepth 1 -name "\${ca}.*.txt" -exec cat {} + | sort -t. -k2,2n -k3,3n > "results/\${ca}.txt"
-          done
-      - uses: actions/upload-artifact@v7
-        with:
-          name: classa-$g
-          path: results/*.txt
       - name: commit scan result to result branch
         env:
           GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
@@ -77,11 +67,19 @@ jobs:
             else
               git checkout -B result
             fi
+            mkdir -p results
+            for ca in $(seq -s ' ' "$a_start" 1 "$a_end"); do
+              find downloaded -maxdepth 1 -name "\${ca}.*.txt" -exec cat {} + | sort -t. -k2,2n -k3,3n > "results/\${ca}.txt"
+            done
             git add results/*.txt
             git commit -m "aggregate class A $a_start-$a_end" || echo "nothing new"
             git push origin "HEAD:refs/heads/result" && break
             sleep 3
           done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: classa-$g
+          path: results/*.txt
       - name: render bin + manifest
         env:
           GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
