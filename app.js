@@ -14,6 +14,9 @@ canvas.height = SIZE;
 const ctx = canvas.getContext("2d");
 const img = ctx.createImageData(SIZE, SIZE);
 
+const wrap = document.getElementById("canvasWrap");
+const overlay = document.getElementById("grid");
+
 // Geladene Class-A-Binärdateien (classa -> Uint8Array) für Live-Lookup beim Hover.
 const binCache = new Map();
 
@@ -319,7 +322,7 @@ function heat(t) {
   return STOPS[STOPS.length - 1][1];
 }
 
-// Quadranten-Layout aus AGENTS.md: 4 Quadranten à 8x8 Class A.
+// Quadranten-Layout: 4 Quadranten à 8x8 Class A.
 // q = Quadrant (0..3), w = Class A innerhalb des Quadranten (0..63)
 function classAOffset(classa) {
   const q = classa >> 6;
@@ -327,6 +330,24 @@ function classAOffset(classa) {
   const ax = (w & 7) + ((q & 1) ? 8 : 0);
   const ay = (w >> 3) + ((q & 2) ? 8 : 0);
   return [ax, ay];
+}
+
+// Umkehrung: globale Pixel (ix, iy) -> Class A / Block / /24.
+function resolve(ix, iy) {
+  const ax = Math.floor(ix / CLASSA_PX);
+  const ay = Math.floor(iy / CLASSA_PX);
+  const q = (ax >= 8 ? 1 : 0) | (ay >= 8 ? 2 : 0);
+  const w = ((ay & 7) << 3) | (ax & 7);
+  const classa = (q << 6) | w;
+
+  const xin = ix - ax * CLASSA_PX;
+  const yin = iy - ay * CLASSA_PX;
+  const b = ((yin >> 4) << 4) | (xin >> 4);
+  const c = ((yin & 15) << 4) | (xin & 15);
+  const off = b * 256 + c;
+  const bx = b & 15;
+  const by = b >> 4;
+  return { classa, b, c, off, bx, by };
 }
 
 function setPixel(x, y, rgb) {
@@ -340,7 +361,6 @@ function setPixel(x, y, rgb) {
 // Faint grid overlay: major lines + Class-A labels (0–255), drawn in %-Koordinaten,
 // damit es bei jeder Canvas-Skalierung scharf bleibt.
 function buildGrid() {
-  const overlay = document.getElementById("grid");
   const NS = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(NS, "svg");
   svg.setAttribute("viewBox", "0 0 100 100");
@@ -374,11 +394,129 @@ function buildGrid() {
   overlay.appendChild(svg);
 }
 
-// Hover: Pixel -> Class A / Block / /24 auflösen und Tooltip + Zellen-Highlight zeigen.
+// Overlay (Grid + Highlights) an die tatsächliche Canvas-Größe koppeln,
+// damit es beim Zoom mitscrollt.
+function syncOverlay() {
+  overlay.style.width = canvas.clientWidth + "px";
+  overlay.style.height = canvas.clientHeight + "px";
+}
+
+// --- Infopanel ---------------------------------------------------------------
+
+const infoEmpty = document.getElementById("infoEmpty");
+const infoDl = document.getElementById("infoDl");
+const infoNet = document.getElementById("infoNet");
+const infoName = document.getElementById("infoName");
+const infoHosts = document.getElementById("infoHosts");
+const infoClassA = document.getElementById("infoClassA");
+
+function showInfo(classa, b, c, count) {
+  const title =
+    KNOWN_NETS[`${classa}.${b}.${c}`] ||
+    CLASSA_NAMES[classa] ||
+    `Class A ${classa}`;
+  const countLabel = count === undefined ? "— (keine Daten)" : count;
+
+  infoEmpty.hidden = true;
+  infoDl.hidden = false;
+  infoNet.textContent = `${classa}.${b}.${c}.0`;
+  infoName.textContent = title;
+  infoHosts.textContent = countLabel;
+  infoClassA.textContent = `${classa} (${CLASSA_NAMES[classa] || "unbekannt"})`;
+
+  // Floating-Tooltip ebenfalls aktualisieren.
+  const tooltip = document.getElementById("tooltip");
+  tooltip.hidden = false;
+  tooltip.innerHTML =
+    `<div class="tip-title">${title}</div>` +
+    `${classa}.${b}.${c}.0<br>${countLabel} Hosts`;
+}
+
+// --- Highlights --------------------------------------------------------------
+
+const cellHighlight = document.getElementById("cellHighlight");
+const blockHighlight = document.getElementById("blockHighlight");
+
+function setHighlights(classa, bx, by) {
+  const step = 100 / 16;
+  const [ax, ay] = classAOffset(classa);
+
+  cellHighlight.hidden = false;
+  cellHighlight.style.left = (ax * step) + "%";
+  cellHighlight.style.top = (ay * step) + "%";
+  cellHighlight.style.width = step + "%";
+  cellHighlight.style.height = step + "%";
+
+  const bstep = step / 16;
+  blockHighlight.hidden = false;
+  blockHighlight.style.left = (ax * step + bx * bstep) + "%";
+  blockHighlight.style.top = (ay * step + by * bstep) + "%";
+  blockHighlight.style.width = bstep + "%";
+  blockHighlight.style.height = bstep + "%";
+}
+
+function clearBlockHighlight() {
+  blockHighlight.hidden = true;
+}
+
+// --- Zoom / Navigation -------------------------------------------------------
+
+let zoomedClassA = null;
+
+function zoomToClassA(classa) {
+  const [ax, ay] = classAOffset(classa);
+  // Canvas so vergrößern, dass eine Class A exakt die sichtbare Breite füllt.
+  const target = wrap.clientWidth * 16;
+  canvas.style.width = target + "px";
+  canvas.style.height = "auto";
+  syncOverlay();
+  // Class A an den Anfang scrollen (füllt dann genau die Breite/Höhe).
+  wrap.scrollLeft = ax * wrap.clientWidth;
+  wrap.scrollTop = ay * wrap.clientWidth;
+  zoomedClassA = classa;
+  document.getElementById("resetBtn").hidden = false;
+}
+
+function resetZoom() {
+  canvas.style.width = "";
+  canvas.style.height = "";
+  syncOverlay();
+  wrap.scrollLeft = 0;
+  wrap.scrollTop = 0;
+  zoomedClassA = null;
+  document.getElementById("resetBtn").hidden = true;
+  cellHighlight.hidden = true;
+  clearBlockHighlight();
+}
+
+// Springt zu einem Class A (und ggf. einem /24) und hebt es hervor.
+function gotoClassA(classa, b, c) {
+  if (zoomedClassA !== classa) zoomToClassA(classa);
+
+  const buf = binCache.get(classa);
+  const off = (b << 8) | c;
+  const count = buf ? buf[off] : undefined;
+  const bx = b & 15;
+  const by = b >> 4;
+
+  setHighlights(classa, bx, by);
+  showInfo(classa, b, c, count);
+
+  if (zoomedClassA === classa && b !== undefined) {
+    const [ax, ay] = classAOffset(classa);
+    const cw = wrap.clientWidth; // = eine Class A im Zoom
+    // Position des /24 innerhalb der Class A (in Anzeige-Pixeln).
+    const xin = (bx & 15) * 16 + (c & 15);
+    const yin = (by >> 4) * 16 + (c >> 4);
+    wrap.scrollLeft = ax * cw + (xin / 256) * cw - cw / 2;
+    wrap.scrollTop = ay * cw + (yin / 256) * cw - cw / 2;
+  }
+}
+
+// --- Hover -------------------------------------------------------------------
+
 function setupHover() {
   const tooltip = document.getElementById("tooltip");
-  const highlight = document.getElementById("cellHighlight");
-  const blockHighlight = document.getElementById("blockHighlight");
 
   canvas.addEventListener("mousemove", (e) => {
     const rect = canvas.getBoundingClientRect();
@@ -388,75 +526,96 @@ function setupHover() {
 
     const ix = Math.min(SIZE - 1, Math.floor(fx * SIZE));
     const iy = Math.min(SIZE - 1, Math.floor(fy * SIZE));
-
-    const ax = Math.floor(ix / CLASSA_PX);
-    const ay = Math.floor(iy / CLASSA_PX);
-    const q = (ax >= 8 ? 1 : 0) | (ay >= 8 ? 2 : 0);
-    const w = ((ay & 7) << 3) | (ax & 7);
-    const classa = (q << 6) | w;
-
-    const xin = ix - ax * CLASSA_PX;
-    const yin = iy - ay * CLASSA_PX;
-    const b = ((yin >> 4) << 4) | (xin >> 4);
-    const c = ((yin & 15) << 4) | (xin & 15);
-    const off = b * 256 + c;
-    const bx = b & 15;
-    const by = b >> 4;
-
+    const { classa, b, c, off, bx, by } = resolve(ix, iy);
     const buf = binCache.get(classa);
     const count = buf ? buf[off] : undefined;
 
-    const title =
-      KNOWN_NETS[`${classa}.${b}.${c}`] ||
-      CLASSA_NAMES[classa] ||
-      `Class A ${classa}`;
-    const countLabel = count === undefined ? "—" : count;
+    setHighlights(classa, bx, by);
+    showInfo(classa, b, c, count);
 
-    tooltip.hidden = false;
-    tooltip.innerHTML =
-      `<div class="tip-title">${title}</div>` +
-      `${classa}.${b}.${c}.0<br>${countLabel} Hosts`;
     tooltip.style.left = (e.clientX + 14) + "px";
     tooltip.style.top = (e.clientY + 14) + "px";
-
-    const step = 100 / 16;
-    highlight.hidden = false;
-    highlight.style.left = (ax * step) + "%";
-    highlight.style.top = (ay * step) + "%";
-    highlight.style.width = step + "%";
-    highlight.style.height = step + "%";
-
-    const bstep = step / 16;
-    blockHighlight.hidden = false;
-    blockHighlight.style.left = (ax * step + bx * bstep) + "%";
-    blockHighlight.style.top = (ay * step + by * bstep) + "%";
-    blockHighlight.style.width = bstep + "%";
-    blockHighlight.style.height = bstep + "%";
   });
 
   canvas.addEventListener("mouseleave", () => {
     tooltip.hidden = true;
-    highlight.hidden = true;
-    blockHighlight.hidden = true;
+    clearBlockHighlight();
+  });
+
+  // Klick zoomt in die Class A unter dem Cursor.
+  canvas.addEventListener("click", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const fx = (e.clientX - rect.left) / rect.width;
+    const fy = (e.clientY - rect.top) / rect.height;
+    if (fx < 0 || fx >= 1 || fy < 0 || fy >= 1) return;
+    const ix = Math.min(SIZE - 1, Math.floor(fx * SIZE));
+    const iy = Math.min(SIZE - 1, Math.floor(fy * SIZE));
+    const { classa, b, c } = resolve(ix, iy);
+    gotoClassA(classa, b, c);
   });
 }
 
+// --- Suche -------------------------------------------------------------------
+
+function setupSearch() {
+  const input = document.getElementById("searchInput");
+  const btn = document.getElementById("searchBtn");
+  const msg = document.getElementById("searchMsg");
+
+  function run() {
+    const raw = input.value.trim();
+    if (!raw) { msg.textContent = ""; return; }
+    // Class A als bloße Zahl?
+    if (/^\d{1,3}$/.test(raw)) {
+      const n = parseInt(raw, 10);
+      if (n > 255) { msg.textContent = "Class A muss zwischen 0 und 255 liegen."; return; }
+      msg.textContent = "";
+      gotoClassA(n, 0, 0);
+      return;
+    }
+    // IPv4 (A.B.C[.0])?
+    const m = raw.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:\.(\d{1,3}))?$/);
+    if (m) {
+      const a = +m[1], b = +m[2], c = +m[3];
+      if (a > 255 || b > 255 || c > 255) {
+        msg.textContent = "Ungültige IP: jeder Teil muss ≤ 255 sein."; return;
+      }
+      msg.textContent = "";
+      gotoClassA(a, b, c);
+      return;
+    }
+    msg.textContent = "Bitte eine Zahl (0–255) oder eine IP wie 8.8.8.0 eingeben.";
+  }
+
+  btn.addEventListener("click", run);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
+}
+
+// --- Laden -------------------------------------------------------------------
+
 async function load() {
   const status = document.getElementById("status");
-  status.textContent = "lade manifest…";
+  status.textContent = "Lade Übersicht…";
 
   let manifest;
+  let generated = null;
   try {
     const manifestResp = await fetch(DATA_BASE + "manifest.json");
     if (!manifestResp.ok) {
       status.textContent =
-        `Keine Daten auf dem 'result'-Branch (manifest.json HTTP ${manifestResp.status}). ` +
-        `Erzeuge mit tools/csv2bin.py die Dateien <classa>.bin + manifest.json und pushe sie dorthin.`;
+        `Noch keine Daten vorhanden (manifest.json HTTP ${manifestResp.status}). ` +
+        `Die Scan-Workflows müssen zuerst Ergebnisse auf den 'result'-Branch laden.`;
       return;
     }
     const text = await manifestResp.text();
     try {
-      manifest = JSON.parse(text);
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        manifest = parsed;
+      } else {
+        manifest = parsed.classas || [];
+        generated = parsed.generated || null;
+      }
     } catch (e) {
       status.textContent = `manifest.json ist kein gültiges JSON: ${e.message}`;
       console.error("manifest body:", text);
@@ -467,17 +626,24 @@ async function load() {
     return;
   }
 
-  if (!Array.isArray(manifest)) {
-    status.textContent = "manifest.json muss ein JSON-Array von Class-A-Nummern sein.";
+  if (!Array.isArray(manifest) || manifest.length === 0) {
+    status.textContent = "manifest.json enthält keine Class-A-Bereiche.";
     return;
   }
 
-  status.textContent = `lade ${manifest.length} Class-A-Binärdateien…`;
+  status.textContent = `${manifest.length} Class-A-Bereiche werden geladen…`;
 
   buildGrid();
+  syncOverlay();
   setupHover();
+  setupSearch();
+  document.getElementById("resetBtn")
+    .addEventListener("click", resetZoom);
+  window.addEventListener("resize", syncOverlay);
 
   let done = 0;
+  let totalNetworks = 0;
+  let totalHosts = 0;
   await Promise.all(manifest.map(async (classa) => {
     const resp = await fetch(DATA_BASE + classa + ".bin");
     if (!resp.ok) {
@@ -492,6 +658,8 @@ async function load() {
     for (let off = 0; off < buf.length; off++) {
       const v = buf[off];
       if (!v) continue;
+      totalNetworks++;
+      totalHosts += v;
       const b = off >> 8;       // classb
       const c = off & 255;      // classc
       const xin = (b & 15) * 16 + (c & 15);
@@ -502,12 +670,31 @@ async function load() {
     }
 
     done++;
-    status.textContent = `lade ${done}/${manifest.length} Class A…`;
+    status.textContent = `Lade ${done}/${manifest.length} Class A…`;
   }));
 
   ctx.putImageData(img, 0, 0);
+  syncOverlay();
+
   status.textContent =
-    `fertig — ${manifest.length} Class A, IPv4-Gesamtübersicht (${SIZE}×${SIZE})`;
+    `Fertig — ${manifest.length} Class-A-Bereiche, IPv4-Gesamtübersicht (${SIZE}×${SIZE}).`;
+
+  // Statistik anzeigen.
+  const stats = document.getElementById("stats");
+  stats.hidden = false;
+  document.getElementById("statClassA").textContent =
+    `${manifest.length} von 256 Class-A-Bereichen`;
+  document.getElementById("statNetworks").textContent =
+    `${totalNetworks.toLocaleString("de-DE")} /24 mit Hosts`;
+  document.getElementById("statHosts").textContent =
+    `${totalHosts.toLocaleString("de-DE")} live Hosts gesamt`;
+  if (generated) {
+    const d = new Date(generated);
+    document.getElementById("statUpdated").textContent =
+      `Zuletzt aktualisiert: ${d.toLocaleString("de-DE")}`;
+  } else {
+    document.getElementById("statUpdated").textContent = "Zuletzt aktualisiert: unbekannt";
+  }
 }
 
 load().catch((e) => {
