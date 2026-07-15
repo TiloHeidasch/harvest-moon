@@ -14,6 +14,9 @@ canvas.height = SIZE;
 const ctx = canvas.getContext("2d");
 const img = ctx.createImageData(SIZE, SIZE);
 
+// Geladene Class-A-Binärdateien (classa -> Uint8Array) für Live-Lookup beim Hover.
+const binCache = new Map();
+
 // Heatmap (linear): 0 -> Hintergrund, dann blau -> grün -> gelb -> rot
 const STOPS = [
   [0.00, [0, 0, 90]],
@@ -60,6 +63,94 @@ function setPixel(x, y, rgb) {
   img.data[idx + 3] = 255;
 }
 
+// Faint grid overlay: major lines + Class-A labels (0–255), drawn in %-Koordinaten,
+// damit es bei jeder Canvas-Skalierung scharf bleibt.
+function buildGrid() {
+  const overlay = document.getElementById("grid");
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "0 0 100 100");
+  svg.setAttribute("preserveAspectRatio", "none");
+
+  const step = 100 / 16; // 6.25% pro Class A
+  for (let i = 0; i <= 16; i++) {
+    const p = (i * step).toFixed(4);
+    const v = document.createElementNS(NS, "line");
+    v.setAttribute("x1", p); v.setAttribute("y1", "0");
+    v.setAttribute("x2", p); v.setAttribute("y2", "100");
+    if (i % 8 === 0) v.setAttribute("class", "quad");
+    svg.appendChild(v);
+
+    const h = document.createElementNS(NS, "line");
+    h.setAttribute("x1", "0"); h.setAttribute("y1", p);
+    h.setAttribute("x2", "100"); h.setAttribute("y2", p);
+    if (i % 8 === 0) h.setAttribute("class", "quad");
+    svg.appendChild(h);
+  }
+
+  for (let classa = 0; classa < 256; classa++) {
+    const [ax, ay] = classAOffset(classa);
+    const t = document.createElementNS(NS, "text");
+    t.setAttribute("x", ((ax + 0.5) * step).toFixed(4));
+    t.setAttribute("y", ((ay + 0.5) * step).toFixed(4));
+    t.textContent = classa;
+    svg.appendChild(t);
+  }
+
+  overlay.appendChild(svg);
+}
+
+// Hover: Pixel -> Class A / Block / /24 auflösen und Tooltip + Zellen-Highlight zeigen.
+function setupHover() {
+  const tooltip = document.getElementById("tooltip");
+  const highlight = document.getElementById("cellHighlight");
+
+  canvas.addEventListener("mousemove", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const fx = (e.clientX - rect.left) / rect.width;
+    const fy = (e.clientY - rect.top) / rect.height;
+    if (fx < 0 || fx >= 1 || fy < 0 || fy >= 1) return;
+
+    const ix = Math.min(SIZE - 1, Math.floor(fx * SIZE));
+    const iy = Math.min(SIZE - 1, Math.floor(fy * SIZE));
+
+    const ax = Math.floor(ix / CLASSA_PX);
+    const ay = Math.floor(iy / CLASSA_PX);
+    const q = (ax >= 8 ? 1 : 0) | (ay >= 8 ? 2 : 0);
+    const w = ((ay & 7) << 3) | (ax & 7);
+    const classa = (q << 6) | w;
+
+    const xin = ix - ax * CLASSA_PX;
+    const yin = iy - ay * CLASSA_PX;
+    const b = ((yin >> 4) << 4) | (xin >> 4);
+    const c = ((yin & 15) << 4) | (xin & 15);
+    const off = b * 256 + c;
+
+    const buf = binCache.get(classa);
+    const count = buf ? buf[off] : undefined;
+
+    tooltip.hidden = false;
+    tooltip.innerHTML =
+      `Class A <b>${classa}</b> &nbsp; Block <b>${b >> 4}</b> ` +
+      `(B=${b}, C=${c})<br>${classa}.${b}.${c}.0 ` +
+      `&middot; ${count === undefined ? "—" : count + " Hosts"}`;
+    tooltip.style.left = (e.clientX + 14) + "px";
+    tooltip.style.top = (e.clientY + 14) + "px";
+
+    const step = 100 / 16;
+    highlight.hidden = false;
+    highlight.style.left = (ax * step) + "%";
+    highlight.style.top = (ay * step) + "%";
+    highlight.style.width = step + "%";
+    highlight.style.height = step + "%";
+  });
+
+  canvas.addEventListener("mouseleave", () => {
+    tooltip.hidden = true;
+    highlight.hidden = true;
+  });
+}
+
 async function load() {
   const status = document.getElementById("status");
   status.textContent = "lade manifest…";
@@ -93,6 +184,9 @@ async function load() {
 
   status.textContent = `lade ${manifest.length} Class-A-Binärdateien…`;
 
+  buildGrid();
+  setupHover();
+
   let done = 0;
   await Promise.all(manifest.map(async (classa) => {
     const resp = await fetch(DATA_BASE + classa + ".bin");
@@ -102,6 +196,7 @@ async function load() {
       return;
     }
     const buf = new Uint8Array(await resp.arrayBuffer());
+    binCache.set(classa, buf);
     const [gx, gy] = classAOffset(classa);
 
     for (let off = 0; off < buf.length; off++) {
