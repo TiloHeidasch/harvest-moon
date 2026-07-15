@@ -8,12 +8,14 @@ pro `/24` einen Helligkeitswert (Host-Anzahl) — ausgeliefert als `.bin`
 
 - **16 Workflows** (`.github/workflows/0.yml` … `15.yml`), jeder deckt **16 aufeinanderfolgende
   Class A** ab (Workflow `g` = Class A `g*16` … `g*16+15`, also `0.yml` → 0–15, `15.yml` → 240–255).
-- Jeder Workflow hat eine **2D-Matrix aus 16×16 = 256 Jobs** (`classa: [g*16…g*16+15]`,
-  `classb: [0,16,32,…,240]`). Das ist exakt GitHub's Matrix-Limit (256 Jobs).
-- Jeder Job ruft `scan-classb.sh <classa> <classb_start> [<count>]` auf → scannt **16 Class B** (`classb_start` … `classb_start+15`). `count` ist optional (Default 8).
+- Jeder Workflow hat eine **2D-Matrix aus 16×4 = 64 Jobs** (`classa: [g*16…g*16+15]`,
+  `classb: [0,64,128,192]`). (Vorher 16×16 = 256 Jobs; reduziert, um den apt-Overhead
+  pro Job zu vervierfachen zu senken.)
+- Jeder Job ruft `scan-classb.sh <classa> <classb_start> [<count>]` auf → scannt **64 Class B** (`classb_start` … `classb_start+63`). `count` ist optional (Default 8).
 - Jeder Class-B-Scan wird in **256 parallele `/24`-Scans** zerlegt (`&` + `wait`).
-  → **4096 parallele nmap-Prozesse** pro Job (identisch zum 1-Class-A-Layout).
-- Ergebnis pro Job: 16 Dateien `results/<classa>.<classb>.txt` (eine pro Class B).
+  → **16384 parallele nmap-Prozesse** pro Job (Test-Konfiguration; Risiko der
+  Oversubscription bewusst akzeptiert).
+- Ergebnis pro Job: 64 Dateien `results/<classa>.<classb>.txt` (eine pro Class B).
 - **Aggregate-Job** (im gleichen Workflow, `needs: scan`): lädt alle Scan-Artifacts
   (`scan-*-`), konkateniert + sortiert sie pro Class A zu `results/<classa>.txt`
   (16 Dateien pro Workflow) und pusht auf den `result`-Branch.
@@ -21,6 +23,11 @@ pro `/24` einen Helligkeitswert (Host-Anzahl) — ausgeliefert als `.bin`
 **Performance:** ~1:24 pro Job (16 Class B via 4096 parallele `/24`), also
 ~3 min pro Class A bei 20er-Concurrency. Pro Workflow (16 Class A) laufen
 256 Jobs, verteilt über mehrere Waves (~13 bei 20er-Concurrency).
+
+**Performance (neue 64-Job-Konfiguration):** ~5–6 min pro Job (64 Class B via
+16384 parallele `/24`), also ~5–6 min pro Class A bei 20er-Concurrency. Pro
+Workflow (16 Class A) laufen 64 Jobs, verteilt über ~4 Waves (20er-Concurrency).
+apt-Overhead sinkt auf ¼ (64 statt 256 Installs pro Workflow).
 
 ## scan-classb.sh
 
@@ -58,8 +65,8 @@ Template einfach neu ausführen:
 ```
 
 Jede `N.yml` (N = 0…15) enthält:
-- Matrix `classa: [N*16…N*16+15]`, `classb: [0,16,32,…,240]` (16×16 = 256 Jobs)
-- `scan`-Job: ruft `scan-classb.sh <classa> <classb_start> 16` auf
+- Matrix `classa: [N*16…N*16+15]`, `classb: [0,64,128,192]` (16×4 = 64 Jobs)
+- `scan`-Job: ruft `scan-classb.sh <classa> <classb_start> 64` auf
 - `aggregate`-Job: mergt Artifacts (`scan-*`) → 16× `results/<classa>.txt` → push auf `result`-Branch
 
 ## Bild-Hierarchie
@@ -111,9 +118,10 @@ Nutzt `nmap -sn` (TCP-SYN, da ICMP auf GitHub blockiert ist) und
 `imagemagick` für PNG-Generierung.
 
 ### Scan-Modus
-16 Workflows (0.yml – 15.yml), jeder mit 16×16 = 256 Matrix-Jobs (2D-Matrix
-`classa` × `classb`). Jeder Job scannt 16 Class B via 4096 parallele `/24`-Scans.
-→ **~1:24 pro Job**, also ~3 min pro Class A bei 20er-Concurrency.
+16 Workflows (0.yml – 15.yml), jeder mit 16×4 = 64 Matrix-Jobs (2D-Matrix
+`classa` × `classb: [0,64,128,192]`). Jeder Job scannt 64 Class B via 16384
+parallele `/24`-Scans (Test-Konfiguration; Oversubscription-Risiko akzeptiert).
+→ **~5–6 min pro Job**, also ~5–6 min pro Class A bei 20er-Concurrency.
 
 ### Aggregation (`aggregate`-Job pro Workflow)
 - lädt alle `scan-*`-Artifacts (`merge-multiple: true`)
