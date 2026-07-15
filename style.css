@@ -68,6 +68,13 @@ canvas {
   pointer-events: none;
 }
 
+.block-highlight {
+  position: absolute;
+  border: 1px solid rgba(255, 220, 120, 0.9);
+  box-shadow: 0 0 4px rgba(255, 220, 120, 0.6);
+  pointer-events: none;
+}
+
 .tooltip {
   position: fixed;
   pointer-events: none;
