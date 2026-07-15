@@ -1,9 +1,9 @@
 // Datenquelle:
-//  - Site + Daten auf demselben Branch (z.B. GitHub Pages von 'results'):
+//  - Site + Daten auf demselben Branch (z.B. GitHub Pages von 'result'):
 //      const DATA_BASE = "./";
-//  - Site auf 'gh-pages', Daten auf 'results' (raw.githubusercontent, CORS *):
-//      const DATA_BASE = "https://raw.githubusercontent.com/OWNER/REPO/results/";
-const DATA_BASE = "https://raw.githubusercontent.com/TiloHeidasch/harvest-moon/results/";
+//  - Site auf 'gh-pages', Daten auf 'result' (raw.githubusercontent, CORS *):
+//      const DATA_BASE = "https://raw.githubusercontent.com/OWNER/REPO/result/";
+const DATA_BASE = "https://raw.githubusercontent.com/TiloHeidasch/harvest-moon/result/";
 
 const SIZE = 4096;          // Gesamtbild: 4096 x 4096 Pixel
 const CLASSA_PX = 256;      // eine Class A = 256 x 256 Pixel (256*256 /24)
@@ -69,7 +69,7 @@ async function load() {
     const manifestResp = await fetch(DATA_BASE + "manifest.json");
     if (!manifestResp.ok) {
       status.textContent =
-        `Keine Daten auf dem 'results'-Branch (manifest.json HTTP ${manifestResp.status}). ` +
+        `Keine Daten auf dem 'result'-Branch (manifest.json HTTP ${manifestResp.status}). ` +
         `Erzeuge mit tools/csv2bin.py die Dateien <classa>.bin + manifest.json und pushe sie dorthin.`;
       return;
     }
