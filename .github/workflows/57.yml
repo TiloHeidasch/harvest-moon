@@ -48,7 +48,7 @@ jobs:
           git add results/57.txt
           git commit -m "aggregate class A 57" || echo "nothing new"
           for i in $(seq 1 12); do
-            git pull --rebase origin result 2>/dev/null
+            git pull --rebase origin result 2>/dev/null || true
             git push origin "HEAD:refs/heads/result" && break
             sleep 3
           done
