@@ -378,6 +378,7 @@ function buildGrid() {
 function setupHover() {
   const tooltip = document.getElementById("tooltip");
   const highlight = document.getElementById("cellHighlight");
+  const blockHighlight = document.getElementById("blockHighlight");
 
   canvas.addEventListener("mousemove", (e) => {
     const rect = canvas.getBoundingClientRect();
@@ -399,6 +400,8 @@ function setupHover() {
     const b = ((yin >> 4) << 4) | (xin >> 4);
     const c = ((yin & 15) << 4) | (xin & 15);
     const off = b * 256 + c;
+    const bx = b & 15;
+    const by = b >> 4;
 
     const buf = binCache.get(classa);
     const count = buf ? buf[off] : undefined;
@@ -422,11 +425,19 @@ function setupHover() {
     highlight.style.top = (ay * step) + "%";
     highlight.style.width = step + "%";
     highlight.style.height = step + "%";
+
+    const bstep = step / 16;
+    blockHighlight.hidden = false;
+    blockHighlight.style.left = (ax * step + bx * bstep) + "%";
+    blockHighlight.style.top = (ay * step + by * bstep) + "%";
+    blockHighlight.style.width = bstep + "%";
+    blockHighlight.style.height = bstep + "%";
   });
 
   canvas.addEventListener("mouseleave", () => {
     tooltip.hidden = true;
     highlight.hidden = true;
+    blockHighlight.hidden = true;
   });
 }
 
