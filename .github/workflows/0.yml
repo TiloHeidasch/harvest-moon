@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        classa: [0]
+        classa: [1]
         classb: [0, 16]
     steps:
       - uses: actions/checkout@v7
