@@ -3,32 +3,87 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Harvest Moon — IPv4 Heatmap</title>
+  <title>Harvest Moon — IPv4-Weltkarte</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header>
-    <h1>Harvest Moon</h1>
-    <p>
-      IPv4 Gesamtübersicht — ein Pixel entspricht einem /24, Farbe = Anzahl live Hosts.
-      Layout (AGENTS.md): 256 Class A in 4 Quadranten à 8×8 Class A, daraus 4096×4096 Pixel.
+    <h1>Harvest Moon — IPv4-Weltkarte</h1>
+    <p class="lead">
+      Eine Heatmap des gesamten IPv4-Adressraums. Jedes Pixel steht für ein
+      <strong>/24-Teilnetz</strong> (256 IP-Adressen). Die Farbe zeigt, wie viele
+      davon <strong>erreichbar</strong> („live") sind &mdash; ermittelt durch
+      automatische Netzwerk-Scans.
     </p>
-    <div id="status">…</div>
-  </header>
-  <main>
-    <div class="canvas-wrap">
-      <canvas id="map"></canvas>
-      <div class="grid-overlay" id="grid"></div>
-      <div class="cell-highlight" id="cellHighlight" hidden></div>
-      <div class="block-highlight" id="blockHighlight" hidden></div>
+    <p class="hint">
+      <strong>So liest du die Karte:</strong> dunkel = keine/nur wenige Hosts,
+      leuchtend rot = sehr viele (bis 255 pro /24). Die Fläche ist in
+      <strong>256 Class-A-Bereiche</strong> (0&ndash;255) unterteilt, angeordnet in
+      vier Quadranten; die Nummer steht jeweils im Feld.
+    </p>
+    <p class="hint">
+      <strong>So bedienst du sie:</strong> mit der Maus über ein Feld fahren für
+      Details, auf ein Feld klicken zum Reinzoomen, oder unten rechts über das
+      Suchfeld direkt zu einer IP oder einem Class-A-Bereich springen.
+    </p>
+
+    <div class="toolbar">
+      <div class="search">
+        <label for="searchInput">Suche</label>
+        <input id="searchInput" type="text" inputmode="numeric"
+               placeholder="z.&nbsp;B. 8.8.8.0 oder 1"
+               autocomplete="off" spellcheck="false">
+        <button id="searchBtn" type="button">Suchen</button>
+        <span id="searchMsg" class="search-msg" aria-live="polite"></span>
+      </div>
+      <button id="resetBtn" type="button" hidden>↩ Zurück zur Übersicht</button>
     </div>
-    <div class="tooltip" id="tooltip" hidden></div>
-    <div class="legend">
-      <span>0</span>
-      <div class="bar"></div>
-      <span>255 Hosts / /24</span>
+
+    <div id="status" class="status">…</div>
+  </header>
+
+  <main>
+    <div class="content">
+      <div class="canvas-col">
+        <div class="canvas-wrap" id="canvasWrap">
+          <canvas id="map"></canvas>
+          <div class="grid-overlay" id="grid"></div>
+          <div class="cell-highlight" id="cellHighlight" hidden></div>
+          <div class="block-highlight" id="blockHighlight" hidden></div>
+        </div>
+        <div class="legend">
+          <span class="legend-label">0 Hosts</span>
+          <div class="bar" aria-hidden="true"></div>
+          <span class="legend-label">255 Hosts / /24</span>
+          <span class="legend-note">Farbe = Anzahl erreichbarer Hosts pro /24</span>
+        </div>
+      </div>
+
+      <aside class="info-panel" id="infoPanel" aria-live="polite">
+        <h2>Details</h2>
+        <p class="info-empty" id="infoEmpty">
+          Fahre mit der Maus über die Karte oder klicke ein Feld, um Details
+          zu einem /24-Netz zu sehen.
+        </p>
+        <dl class="info-dl" id="infoDl" hidden>
+          <dt>Netz</dt><dd id="infoNet">—</dd>
+          <dt>Zweck / Inhaber</dt><dd id="infoName">—</dd>
+          <dt>Live-Hosts</dt><dd id="infoHosts">—</dd>
+          <dt>Class-A-Bereich</dt><dd id="infoClassA">—</dd>
+        </dl>
+      </aside>
+    </div>
+
+    <div class="stats" id="stats" hidden>
+      <span id="statClassA">—</span>
+      <span id="statNetworks">—</span>
+      <span id="statHosts">—</span>
+      <span id="statUpdated">—</span>
     </div>
   </main>
+
+  <div class="tooltip" id="tooltip" hidden></div>
+
   <script src="app.js"></script>
 </body>
 </html>

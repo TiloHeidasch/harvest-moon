@@ -11,6 +11,7 @@ Output (into --out directory):
     manifest.json    JSON list of Class-A numbers that actually have data
 """
 import argparse
+import datetime
 import json
 import os
 import sys
@@ -65,8 +66,15 @@ def main():
         with open(os.path.join(args.out, f"{a}.bin"), "wb") as f:
             f.write(data[a])
 
+    # Objekt mit Zeitstempel; die Webseite liest sowohl dieses Format
+    # (manifest["classas"] + manifest["generated"]) als auch das alte
+    # reine Array-Format. So bleiben bereits gepushte Daten kompatibel.
+    manifest_obj = {
+        "generated": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "classas": manifest,
+    }
     with open(os.path.join(args.out, "manifest.json"), "w") as f:
-        json.dump(manifest, f)
+        json.dump(manifest_obj, f)
 
     print(
         f"wrote {len(manifest)} class-A files, {entries} populated /24 entries",
