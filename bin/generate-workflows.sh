@@ -7,9 +7,14 @@ mkdir -p "$outdir"
 classb_list=$(seq -s, 0 16 240)
 classb_list="${classb_list%,}"
 
-for a in $(seq 0 255); do
-    cat > "$outdir/$a.yml" <<EOF
-name: Scan Class A $a
+for g in $(seq 0 15); do
+    a_start=$((g * 16))
+    a_end=$((g * 16 + 15))
+    classa_list=$(seq -s, "$a_start" 1 "$a_end")
+    classa_list="${classa_list%,}"
+
+    cat > "$outdir/$g.yml" <<EOF
+name: Scan Class A $a_start-$a_end
 
 on:
   workflow_dispatch:
@@ -19,14 +24,15 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
+        classa: [$classa_list]
         classb: [$classb_list]
     steps:
       - uses: actions/checkout@v7
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap
-      - run: ./scan-classb.sh $a \${{ matrix.classb }} 16
+      - run: ./scan-classb.sh \${{ matrix.classa }} \${{ matrix.classb }} 16
       - uses: actions/upload-artifact@v7
         with:
-          name: scan-$a-\${{ matrix.classb }}
+          name: scan-\${{ matrix.classa }}-\${{ matrix.classb }}
           path: results/
 
   aggregate:
@@ -38,21 +44,23 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v7
         with:
-          pattern: scan-$a-*
+          pattern: scan-*
           merge-multiple: true
           path: downloaded/
       - name: stage render tool
         run: |
           mkdir -p /tmp/render-tool
           cp tools/csv2bin.py /tmp/render-tool/
-      - name: build results/$a.txt
+      - name: build results/<A>.txt
         run: |
           mkdir -p results
-          find downloaded -name '*.txt' -exec cat {} + | sort -t. -k2,2n -k3,3n > results/$a.txt
+          for ca in $(seq -s ' ' "$a_start" 1 "$a_end"); do
+            find downloaded -maxdepth 1 -name "\${ca}.*.txt" -exec cat {} + | sort -t. -k2,2n -k3,3n > "results/\${ca}.txt"
+          done
       - uses: actions/upload-artifact@v7
         with:
-          name: classa-$a
-          path: results/$a.txt
+          name: classa-$g
+          path: results/*.txt
       - name: commit scan result to result branch
         env:
           GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
@@ -61,8 +69,8 @@ jobs:
           git config user.name "github-actions"
           git fetch origin result || true
           git checkout -B result origin/result 2>/dev/null || git checkout -b result
-          git add results/$a.txt
-          git commit -m "aggregate class A $a" || echo "nothing new"
+          git add results/*.txt
+          git commit -m "aggregate class A $a_start-$a_end" || echo "nothing new"
           for i in \$(seq 1 12); do
             git pull --rebase origin result 2>/dev/null || true
             git push origin "HEAD:refs/heads/result" && break
@@ -89,4 +97,4 @@ jobs:
 EOF
 done
 
-echo "generated 256 workflow files in $outdir/"
+echo "generated 16 workflow files in $outdir/"

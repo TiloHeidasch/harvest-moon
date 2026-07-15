@@ -1,4 +1,4 @@
-name: Scan Class A 7
+name: Scan Class A 112-127
 
 on:
   workflow_dispatch:
@@ -8,14 +8,15 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
+        classa: [112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127]
         classb: [0,16,32,48,64,80,96,112,128,144,160,176,192,208,224,240]
     steps:
       - uses: actions/checkout@v7
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap
-      - run: ./scan-classb.sh 7 ${{ matrix.classb }} 16
+      - run: ./scan-classb.sh ${{ matrix.classa }} ${{ matrix.classb }} 16
       - uses: actions/upload-artifact@v7
         with:
-          name: scan-7-${{ matrix.classb }}
+          name: scan-${{ matrix.classa }}-${{ matrix.classb }}
           path: results/
 
   aggregate:
@@ -27,21 +28,23 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v7
         with:
-          pattern: scan-7-*
+          pattern: scan-*
           merge-multiple: true
           path: downloaded/
       - name: stage render tool
         run: |
           mkdir -p /tmp/render-tool
           cp tools/csv2bin.py /tmp/render-tool/
-      - name: build results/7.txt
+      - name: build results/<A>.txt
         run: |
           mkdir -p results
-          find downloaded -name '*.txt' -exec cat {} + | sort -t. -k2,2n -k3,3n > results/7.txt
+          for ca in 112 113 114 115 116 117 118 119 120 121 122 123 124 125 126 127 ; do
+            find downloaded -maxdepth 1 -name "${ca}.*.txt" -exec cat {} + | sort -t. -k2,2n -k3,3n > "results/${ca}.txt"
+          done
       - uses: actions/upload-artifact@v7
         with:
           name: classa-7
-          path: results/7.txt
+          path: results/*.txt
       - name: commit scan result to result branch
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -50,8 +53,8 @@ jobs:
           git config user.name "github-actions"
           git fetch origin result || true
           git checkout -B result origin/result 2>/dev/null || git checkout -b result
-          git add results/7.txt
-          git commit -m "aggregate class A 7" || echo "nothing new"
+          git add results/*.txt
+          git commit -m "aggregate class A 112-127" || echo "nothing new"
           for i in $(seq 1 12); do
             git pull --rebase origin result 2>/dev/null || true
             git push origin "HEAD:refs/heads/result" && break

@@ -5,17 +5,21 @@ Graustufen-PNGs (ein Pixel pro /24, Helligkeit = Host-Anzahl).
 
 ## Architektur (Überblick)
 
-- **256 Workflows** (`.github/workflows/0.yml` … `255.yml`), einer pro Class A (0–255).
-- Jeder Workflow hat eine Matrix aus **16 Jobs** (Class-B-Startwerte `0,16,32,…,240`).
+- **16 Workflows** (`.github/workflows/0.yml` … `15.yml`), jeder deckt **16 aufeinanderfolgende
+  Class A** ab (Workflow `g` = Class A `g*16` … `g*16+15`, also `0.yml` → 0–15, `15.yml` → 240–255).
+- Jeder Workflow hat eine **2D-Matrix aus 16×16 = 256 Jobs** (`classa: [g*16…g*16+15]`,
+  `classb: [0,16,32,…,240]`). Das ist exakt GitHub's Matrix-Limit (256 Jobs).
 - Jeder Job ruft `scan-classb.sh <classa> <classb_start> [<count>]` auf → scannt **16 Class B** (`classb_start` … `classb_start+15`). `count` ist optional (Default 8).
 - Jeder Class-B-Scan wird in **256 parallele `/24`-Scans** zerlegt (`&` + `wait`).
-  → **4096 parallele nmap-Prozesse** pro Job.
-- Ergebnis pro Job: 8 Dateien `results/<classa>.<classb>.txt` (eine pro Class B).
-- **Aggregate-Job** (im gleichen Workflow, `needs: scan`): lädt alle Scan-Artifacts,
-  konkateniert + sortiert sie zu `results/<classa>.txt` und pusht auf den `result`-Branch.
+  → **4096 parallele nmap-Prozesse** pro Job (identisch zum 1-Class-A-Layout).
+- Ergebnis pro Job: 16 Dateien `results/<classa>.<classb>.txt` (eine pro Class B).
+- **Aggregate-Job** (im gleichen Workflow, `needs: scan`): lädt alle Scan-Artifacts
+  (`scan-*-`), konkateniert + sortiert sie pro Class A zu `results/<classa>.txt`
+  (16 Dateien pro Workflow) und pusht auf den `result`-Branch.
 
 **Performance:** ~1:24 pro Job (16 Class B via 4096 parallele `/24`), also
-~3 min pro Class A bei 20er-Concurrency.
+~3 min pro Class A bei 20er-Concurrency. Pro Workflow (16 Class A) laufen
+256 Jobs, verteilt über mehrere Waves (~13 bei 20er-Concurrency).
 
 ## scan-classb.sh
 
@@ -45,17 +49,17 @@ nmap -sn -n -T5 --max-rtt-timeout 200ms \
 
 ## bin/generate-workflows.sh
 
-Generiert alle 256 Workflow-Dateien aus einem Template. Nach Änderungen am
+Generiert alle 16 Workflow-Dateien aus einem Template. Nach Änderungen am
 Template einfach neu ausführen:
 
 ```bash
 ./bin/generate-workflows.sh
 ```
 
-Jede `N.yml` enthält:
-- Matrix `classb: [0,16,32,…,240]` (16 Jobs)
-- `scan`-Job: ruft `scan-classb.sh N <classb_start>` auf
-- `aggregate`-Job: mergt Artifacts → `results/N.txt` → push auf `result`-Branch
+Jede `N.yml` (N = 0…15) enthält:
+- Matrix `classa: [N*16…N*16+15]`, `classb: [0,16,32,…,240]` (16×16 = 256 Jobs)
+- `scan`-Job: ruft `scan-classb.sh <classa> <classb_start> 16` auf
+- `aggregate`-Job: mergt Artifacts (`scan-*`) → 16× `results/<classa>.txt` → push auf `result`-Branch
 
 ## Bild-Hierarchie
 
@@ -100,21 +104,22 @@ y_global = ay * 256 + y_in_classA
 
 ## CI (`.github/workflows/*.yml`)
 
-Getriggert durch `workflow_dispatch`. Pro Class A ein Workflow.
+Getriggert durch `workflow_dispatch`. Pro 16 Class A ein Workflow.
 
 Nutzt `nmap -sn` (TCP-SYN, da ICMP auf GitHub blockiert ist) und
 `imagemagick` für PNG-Generierung.
 
 ### Scan-Modus
-256 Workflows (0.yml – 255.yml), jeder mit 16 Matrix-Jobs.
-Jeder Job scannt 16 Class B via 4096 parallele `/24`-Scans.
+16 Workflows (0.yml – 15.yml), jeder mit 16×16 = 256 Matrix-Jobs (2D-Matrix
+`classa` × `classb`). Jeder Job scannt 16 Class B via 4096 parallele `/24`-Scans.
 → **~1:24 pro Job**, also ~3 min pro Class A bei 20er-Concurrency.
 
 ### Aggregation (`aggregate`-Job pro Workflow)
-- lädt alle `scan-<classa>-*`-Artifacts (`merge-multiple: true`)
-- `cat … | sort -t. -k2,2n -k3,3n > results/<classa>.txt` (logisch sortiert nach Class B, dann Class C)
+- lädt alle `scan-*`-Artifacts (`merge-multiple: true`)
+- pro Class A: `cat … | sort -t. -k2,2n -k3,3n > results/<classa>.txt`
+  (logisch sortiert nach Class B, dann Class C; 16 Dateien pro Workflow)
 - pusht auf `result`-Branch (GitHub als Storage, Rebase-Retry bei Konflikten)
-- zusätzlich Artifact `classa-<classa>` für sofortige Weiterverarbeitung
+- zusätzlich Artifact `classa-<N>` (alle `results/*.txt` des Workflows) für sofortige Weiterverarbeitung
 
 ### Render (implementiert)
 - Der Render-Schritt ist in jeden `N.yml`-Workflow integriert (Job `aggregate`,
