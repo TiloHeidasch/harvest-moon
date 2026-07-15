@@ -117,12 +117,15 @@ Jeder Job scannt 16 Class B via 4096 parallele `/24`-Scans.
 - zusätzlich Artifact `classa-<classa>` für sofortige Weiterverarbeitung
 
 ### Render (implementiert)
-- `.github/workflows/render.yml`: getriggert per `workflow_dispatch` und
-  nightly `schedule` (cron). Liest alle `results/*.txt` vom `result`-Branch
-  (via `git archive`) und konvertiert sie mit `tools/csv2bin.py` zu:
+- Der Render-Schritt ist in jeden `N.yml`-Workflow integriert (Job `aggregate`,
+  Schritt `render bin + manifest`). Nachdem der Scan-Aggregat sein
+  `results/<classa>.txt` auf den `result`-Branch gepusht hat, lädt der
+  Render-Schritt den gesamten `result`-Branch (via `git archive`), konvertiert
+  alle `results/*.txt` mit `tools/csv2bin.py` zu:
   - `<classa>.bin` — 65536 Bytes, ein Byte pro /24 (Offset = B*256 + C)
   - `manifest.json` — JSON-Array der Class-A-Nummern mit Daten
-  Pusht beides zurück auf den `result`-Branch (Repo-Root, neben `results/*.txt`).
+  und pusht beides zurück auf den `result`-Branch (Repo-Root, neben `results/*.txt`).
+  Es gibt keinen separaten `render.yml`-Workflow mehr (cron entfernt).
 - `tools/csv2bin.py`: Input `results/*.txt` (Format `A.B.C.0,COUNT`) →
   Output `<classa>.bin` + `manifest.json` (siehe oben).
 - Die Webseite (`site/app.js`) lädt `manifest.json` + `<classa>.bin` per

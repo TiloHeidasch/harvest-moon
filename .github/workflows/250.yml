@@ -30,14 +30,19 @@ jobs:
           pattern: scan-250-*
           merge-multiple: true
           path: downloaded/
-      - run: |
+      - name: stage render tool
+        run: |
+          mkdir -p /tmp/render-tool
+          cp tools/csv2bin.py /tmp/render-tool/
+      - name: build results/250.txt
+        run: |
           mkdir -p results
           find downloaded -name '*.txt' -exec cat {} + | sort -t. -k2,2n -k3,3n > results/250.txt
       - uses: actions/upload-artifact@v7
         with:
           name: classa-250
           path: results/250.txt
-      - name: commit to result branch
+      - name: commit scan result to result branch
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -47,6 +52,24 @@ jobs:
           git checkout -B result origin/result 2>/dev/null || git checkout -b result
           git add results/250.txt
           git commit -m "aggregate class A 250" || echo "nothing new"
+          for i in $(seq 1 12); do
+            git pull --rebase origin result 2>/dev/null || true
+            git push origin "HEAD:refs/heads/result" && break
+            sleep 3
+          done
+      - name: render bin + manifest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          rm -rf /tmp/scan-data /tmp/render-out
+          mkdir -p /tmp/scan-data /tmp/render-out
+          git fetch origin result || true
+          git archive origin/result | tar -x -C /tmp/scan-data
+          python3 /tmp/render-tool/csv2bin.py /tmp/scan-data/results --out /tmp/render-out
+          git checkout -B result origin/result 2>/dev/null || git checkout -b result
+          cp /tmp/render-out/* .
+          git add .
+          git commit -m "render bin + manifest" || echo "nothing new"
           for i in $(seq 1 12); do
             git pull --rebase origin result 2>/dev/null || true
             git push origin "HEAD:refs/heads/result" && break
