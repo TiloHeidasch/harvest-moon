@@ -13,11 +13,19 @@ for g in $(seq 0 15); do
     classa_list=$(seq -s, "$a_start" 1 "$a_end")
     classa_list="${classa_list%,}"
 
+    # stagger by 30 min, starting 21:00 UTC (= 22:00 CET) for g=0,
+    # finishing 05:00 UTC (= 06:00 CET) for g=15
+    start_min=$(( (21 * 60) + g * 30 ))
+    cron_min=$(( start_min % 60 ))
+    cron_hr=$(( (start_min / 60) % 24 ))
+
     cat > "$outdir/$g.yml" <<EOF
 name: Scan Class A $a_start-$a_end
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "$cron_min $cron_hr * * *"
 
 jobs:
   scan:
