@@ -470,9 +470,12 @@ function zoomToClassA(classa) {
   canvas.style.width = target + "px";
   canvas.style.height = "auto";
   syncOverlay();
-  // Class A an den Anfang scrollen (füllt dann genau die Breite/Höhe).
-  wrap.scrollLeft = ax * wrap.clientWidth;
-  wrap.scrollTop = ay * wrap.clientWidth;
+  // Echte Anzeige-Breite einer Class A in Inhalt-Pixeln (canvas, nicht der
+  // durch Scrollbars verkleinerte Viewport) — das ist der Maßstab für Scroll.
+  const classAViewW = canvas.clientWidth / 16;
+  // Class A oben links im Viewport platzieren (linke obere Ecke = Class-A-Ecke).
+  wrap.scrollLeft = ax * classAViewW;
+  wrap.scrollTop = ay * classAViewW;
   zoomedClassA = classa;
   document.getElementById("resetBtn").hidden = false;
 }
@@ -490,7 +493,9 @@ function resetZoom() {
 }
 
 // Springt zu einem Class A (und ggf. einem /24) und hebt es hervor.
-function gotoClassA(classa, b, c) {
+// centerNet: bei true das konkrete /24 zentrieren (Suche nach IP),
+// bei false die Class A oben links im Viewport ausrichten (Klick).
+function gotoClassA(classa, b, c, centerNet) {
   if (zoomedClassA !== classa) zoomToClassA(classa);
 
   const buf = binCache.get(classa);
@@ -502,14 +507,14 @@ function gotoClassA(classa, b, c) {
   setHighlights(classa, bx, by);
   showInfo(classa, b, c, count);
 
-  if (zoomedClassA === classa && b !== undefined) {
+  if (centerNet) {
     const [ax, ay] = classAOffset(classa);
-    const cw = wrap.clientWidth; // = eine Class A im Zoom
+    const classAViewW = canvas.clientWidth / 16;
     // Position des /24 innerhalb der Class A (in Anzeige-Pixeln).
     const xin = (bx & 15) * 16 + (c & 15);
     const yin = (by >> 4) * 16 + (c >> 4);
-    wrap.scrollLeft = ax * cw + (xin / 256) * cw - cw / 2;
-    wrap.scrollTop = ay * cw + (yin / 256) * cw - cw / 2;
+    wrap.scrollLeft = ax * classAViewW + (xin / 256) * classAViewW - classAViewW / 2;
+    wrap.scrollTop = ay * classAViewW + (yin / 256) * classAViewW - classAViewW / 2;
   }
 }
 
@@ -551,7 +556,7 @@ function setupHover() {
     const ix = Math.min(SIZE - 1, Math.floor(fx * SIZE));
     const iy = Math.min(SIZE - 1, Math.floor(fy * SIZE));
     const { classa, b, c } = resolve(ix, iy);
-    gotoClassA(classa, b, c);
+    gotoClassA(classa, b, c, false);
   });
 }
 
@@ -570,7 +575,7 @@ function setupSearch() {
       const n = parseInt(raw, 10);
       if (n > 255) { msg.textContent = "Class A muss zwischen 0 und 255 liegen."; return; }
       msg.textContent = "";
-      gotoClassA(n, 0, 0);
+      gotoClassA(n, 0, 0, false);
       return;
     }
     // IPv4 (A.B.C[.0])?
@@ -581,7 +586,7 @@ function setupSearch() {
         msg.textContent = "Ungültige IP: jeder Teil muss ≤ 255 sein."; return;
       }
       msg.textContent = "";
-      gotoClassA(a, b, c);
+      gotoClassA(a, b, c, true);
       return;
     }
     msg.textContent = "Bitte eine Zahl (0–255) oder eine IP wie 8.8.8.0 eingeben.";
