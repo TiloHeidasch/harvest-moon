@@ -116,6 +116,15 @@ Jeder Job scannt 16 Class B via 4096 parallele `/24`-Scans.
 - pusht auf `result`-Branch (GitHub als Storage, Rebase-Retry bei Konflikten)
 - zusätzlich Artifact `classa-<classa>` für sofortige Weiterverarbeitung
 
-### Render (offen)
-Noch nicht implementiert. Soll später die `classa-*`-Artifacts bzw.
-`result`-Branch-Daten zu PNGs kombinieren (wie in Pixel-Mapping beschrieben).
+### Render (implementiert)
+- `.github/workflows/render.yml`: getriggert per `workflow_dispatch` und
+  nightly `schedule` (cron). Liest alle `results/*.txt` vom `result`-Branch
+  (via `git archive`) und konvertiert sie mit `tools/csv2bin.py` zu:
+  - `<classa>.bin` — 65536 Bytes, ein Byte pro /24 (Offset = B*256 + C)
+  - `manifest.json` — JSON-Array der Class-A-Nummern mit Daten
+  Pusht beides zurück auf den `result`-Branch (Repo-Root, neben `results/*.txt`).
+- `tools/csv2bin.py`: Input `results/*.txt` (Format `A.B.C.0,COUNT`) →
+  Output `<classa>.bin` + `manifest.json` (siehe oben).
+- Die Webseite (`site/app.js`) lädt `manifest.json` + `<classa>.bin` per
+  `raw.githubusercontent.com/<owner>/<repo>/result/` und rendert client-seitig
+  per Canvas/Heatmap (kein imagemagick, keine PNG-Erzeugung in CI).
