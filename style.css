@@ -82,6 +82,12 @@ canvas {
   z-index: 10;
 }
 
+.tooltip .tip-title {
+  font-weight: 700;
+  color: #eef;
+  margin-bottom: 2px;
+}
+
 .legend {
   display: flex;
   align-items: center;

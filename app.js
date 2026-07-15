@@ -17,6 +17,17 @@ const img = ctx.createImageData(SIZE, SIZE);
 // Geladene Class-A-Binärdateien (classa -> Uint8Array) für Live-Lookup beim Hover.
 const binCache = new Map();
 
+// Platzhalter: Class-A-Nummer -> zugewiesener Zweck / Inhaber (für den Tooltip-Titel).
+// Nach und nach mit echten Zuweisungen füllen (z.B. aus IANA-Registrierungen).
+const CLASSA_NAMES = {
+  0:   "Reserved — „This network“ (0.0.0.0/8)",
+  10:  "Private-Use (RFC 1918, 10.0.0.0/8)",
+  100: "Shared Address Space / CGN (100.64.0.0/10)",
+  127: "Loopback (127.0.0.0/8)",
+  224: "Multicast (224.0.0.0/4)",
+  240: "Reserved (240.0.0.0/4)",
+};
+
 // Heatmap (linear): 0 -> Hintergrund, dann blau -> grün -> gelb -> rot
 const STOPS = [
   [0.00, [0, 0, 90]],
@@ -129,11 +140,13 @@ function setupHover() {
     const buf = binCache.get(classa);
     const count = buf ? buf[off] : undefined;
 
+    const title = CLASSA_NAMES[classa] || `Class A ${classa}`;
+    const countLabel = count === undefined ? "—" : count;
+
     tooltip.hidden = false;
     tooltip.innerHTML =
-      `Class A <b>${classa}</b> &nbsp; Block <b>${b >> 4}</b> ` +
-      `(B=${b}, C=${c})<br>${classa}.${b}.${c}.0 ` +
-      `&middot; ${count === undefined ? "—" : count + " Hosts"}`;
+      `<div class="tip-title">${title}</div>` +
+      `${classa}.${b}.${c}.0<br>${countLabel} Hosts`;
     tooltip.style.left = (e.clientX + 14) + "px";
     tooltip.style.top = (e.clientY + 14) + "px";
 
