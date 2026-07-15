@@ -15,17 +15,13 @@
       davon <strong>erreichbar</strong> („live") sind &mdash; ermittelt durch
       automatische Netzwerk-Scans.
     </p>
-    <p class="hint">
-      <strong>So liest du die Karte:</strong> dunkel = keine/nur wenige Hosts,
-      leuchtend rot = sehr viele (bis 255 pro /24). Die Fläche ist in
-      <strong>256 Class-A-Bereiche</strong> (0&ndash;255) unterteilt, angeordnet in
-      vier Quadranten; die Nummer steht jeweils im Feld.
-    </p>
-    <p class="hint">
-      <strong>So bedienst du sie:</strong> mit der Maus über ein Feld fahren für
-      Details, auf ein Feld klicken zum Reinzoomen, oder unten rechts über das
-      Suchfeld direkt zu einer IP oder einem Class-A-Bereich springen.
-    </p>
+
+    <div class="legend">
+      <span class="legend-label">0 Hosts</span>
+      <div class="bar" aria-hidden="true"></div>
+      <span class="legend-label">255 Hosts / /24</span>
+      <span class="legend-note">Farbe = Anzahl erreichbarer Hosts pro /24</span>
+    </div>
 
     <div class="toolbar">
       <div class="search">
@@ -52,12 +48,6 @@
           <div class="block-highlight" id="blockHighlight" hidden></div>
         </div>
       </div>
-        <div class="legend">
-          <span class="legend-label">0 Hosts</span>
-          <div class="bar" aria-hidden="true"></div>
-          <span class="legend-label">255 Hosts / /24</span>
-          <span class="legend-note">Farbe = Anzahl erreichbarer Hosts pro /24</span>
-        </div>
       </div>
 
       <aside class="info-panel" id="infoPanel" aria-live="polite">
@@ -71,6 +61,7 @@
           <dt>Zweck / Inhaber</dt><dd id="infoName">—</dd>
           <dt>Live-Hosts</dt><dd id="infoHosts">—</dd>
           <dt>Class-A-Bereich</dt><dd id="infoClassA">—</dd>
+          <dt>Datenstand</dt><dd id="infoDate">—</dd>
         </dl>
       </aside>
     </div>

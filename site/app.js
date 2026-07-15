@@ -19,6 +19,8 @@ const overlay = document.getElementById("grid");
 
 // Geladene Class-A-Binärdateien (classa -> Uint8Array) für Live-Lookup beim Hover.
 const binCache = new Map();
+// Last-Modified-Datum pro Class A (aus dem HTTP-Header).
+const binDates = new Map();
 
 // Platzhalter: Class-A-Nummer -> zugewiesener Zweck / Inhaber (für den Tooltip-Titel).
 // Nach und nach mit echten Zuweisungen füllen (z.B. aus IANA-Registrierungen).
@@ -409,6 +411,7 @@ const infoNet = document.getElementById("infoNet");
 const infoName = document.getElementById("infoName");
 const infoHosts = document.getElementById("infoHosts");
 const infoClassA = document.getElementById("infoClassA");
+const infoDate = document.getElementById("infoDate");
 
 function showInfo(classa, b, c, count) {
   const title =
@@ -423,6 +426,9 @@ function showInfo(classa, b, c, count) {
   infoName.textContent = title;
   infoHosts.textContent = countLabel;
   infoClassA.textContent = `${classa} (${CLASSA_NAMES[classa] || "unbekannt"})`;
+
+  const d = binDates.get(classa);
+  infoDate.textContent = d ? d.toLocaleString("de-DE") : "unbekannt";
 
   // Floating-Tooltip ebenfalls aktualisieren.
   const tooltip = document.getElementById("tooltip");
@@ -649,6 +655,7 @@ async function load() {
   let done = 0;
   let totalNetworks = 0;
   let totalHosts = 0;
+  let newestBin = null;
   await Promise.all(manifest.map(async (classa) => {
     const resp = await fetch(DATA_BASE + classa + ".bin");
     if (!resp.ok) {
@@ -658,6 +665,13 @@ async function load() {
     }
     const buf = new Uint8Array(await resp.arrayBuffer());
     binCache.set(classa, buf);
+
+    const lm = resp.headers.get("last-modified");
+    if (lm) {
+      const d = new Date(lm);
+      binDates.set(classa, d);
+      if (!newestBin || d > newestBin) newestBin = d;
+    }
     const [gx, gy] = classAOffset(classa);
 
     for (let off = 0; off < buf.length; off++) {
@@ -681,8 +695,7 @@ async function load() {
   ctx.putImageData(img, 0, 0);
   syncOverlay();
 
-  status.textContent =
-    `Fertig — ${manifest.length} Class-A-Bereiche, IPv4-Gesamtübersicht (${SIZE}×${SIZE}).`;
+  status.textContent = `Karte geladen (${manifest.length} von 256 Class-A-Bereichen).`;
 
   // Statistik anzeigen.
   const stats = document.getElementById("stats");
@@ -693,13 +706,9 @@ async function load() {
     `${totalNetworks.toLocaleString("de-DE")} /24 mit Hosts`;
   document.getElementById("statHosts").textContent =
     `${totalHosts.toLocaleString("de-DE")} live Hosts gesamt`;
-  if (generated) {
-    const d = new Date(generated);
-    document.getElementById("statUpdated").textContent =
-      `Zuletzt aktualisiert: ${d.toLocaleString("de-DE")}`;
-  } else {
-    document.getElementById("statUpdated").textContent = "Zuletzt aktualisiert: unbekannt";
-  }
+  const updated = newestBin ? newestBin.toLocaleString("de-DE") : (generated ? new Date(generated).toLocaleString("de-DE") : null);
+  document.getElementById("statUpdated").textContent =
+    `Zuletzt aktualisiert: ${updated || "unbekannt"}`;
 }
 
 load().catch((e) => {
