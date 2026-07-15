@@ -1,7 +1,8 @@
 # harvest-moon
 
 Internet-Ping-Sweeper. Scannt IPv4-Adressräume mit nmap und erzeugt
-Graustufen-PNGs (ein Pixel pro /24, Helligkeit = Host-Anzahl).
+pro `/24` einen Helligkeitswert (Host-Anzahl) — ausgeliefert als `.bin`
+(1 Byte pro /24) und client-seitig als Heatmap-Canvas gerendert.
 
 ## Architektur (Überblick)
 
@@ -136,3 +137,28 @@ Nutzt `nmap -sn` (TCP-SYN, da ICMP auf GitHub blockiert ist) und
 - Die Webseite (`site/app.js`) lädt `manifest.json` + `<classa>.bin` per
   `raw.githubusercontent.com/<owner>/<repo>/result/` und rendert client-seitig
   per Canvas/Heatmap (kein imagemagick, keine PNG-Erzeugung in CI).
+
+## Webseite (GitHub Pages)
+
+Die öffentliche Heatmap-Seite liegt als Quelle in `site/` (auf `main`) und
+wird über GitHub Pages aus dem **`gh-pages`-Branch (Repo-Root)** ausgeliefert
+— nicht aus dem `site/`-Unterordner. `main` = Quelle, `gh-pages` = veröffentlichte Kopie.
+
+### Deployment (`.github/workflows/deploy.yml`)
+- Trigger: Push auf `main` (sowie `master`) und `workflow_dispatch`.
+- Kopiert `site/*` in den Root des `gh-pages`-Branch (mit 20er-Rebase-Retry,
+  identisch zum `result`-Branch-Push der Scan-Workflows) und pusht zurück.
+- Änderungen an `site/` einfach nach `main` pushen — der Deploy läuft automatisch.
+  Manuell auch über den Actions-Tab auslösbar.
+
+### Seiten-Features (`site/app.js`)
+- **Grid-Overlay**: faintes SVG-Raster in %-Koordinaten (scharf bei jeder
+  Canvas-Skalierung) mit den 256 Class-A-Zellen (0–255) samt Nummern; die
+  Quadrant-Grenzen (alle 8 Class A) sind etwas stärker gezeichnet.
+- **Hover-Tooltip** zeigt unter dem Cursor:
+  - **Titel** = zugewiesener Zweck/Inhaber der Class A (aus `CLASSA_NAMES`,
+    einer Platzhalter-Map — nach und nach mit echten Zuweisungen füllen),
+  - die volle `/24`-Adresse `A.B.C.0` und
+  - die Host-Anzahl (Live-Lookup aus `binCache`, `—` falls keine Daten).
+- Host-Counts werden beim Laden in `binCache` (classa → Uint8Array) gehalten,
+  damit der Tooltip ohne erneuten Fetch auskommt.
