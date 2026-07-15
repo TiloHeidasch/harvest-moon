@@ -18,13 +18,6 @@ header .lead strong { color: #e7e7f2; }
 header .hint { font-size: .88rem; }
 header .hint strong { color: #bcd; }
 
-.status {
-  margin: .6rem 0 .2rem;
-  color: #7fd;
-  font-size: .85rem;
-  min-height: 1.2em;
-}
-
 /* Toolbar: Suche + Reset */
 .toolbar {
   display: flex;

@@ -605,17 +605,13 @@ function setupSearch() {
 // --- Laden -------------------------------------------------------------------
 
 async function load() {
-  const status = document.getElementById("status");
-  status.textContent = "Lade Übersicht…";
 
   let manifest;
   let generated = null;
   try {
     const manifestResp = await fetch(DATA_BASE + "manifest.json");
     if (!manifestResp.ok) {
-      status.textContent =
-        `Noch keine Daten vorhanden (manifest.json HTTP ${manifestResp.status}). ` +
-        `Die Scan-Workflows müssen zuerst Ergebnisse auf den 'result'-Branch laden.`;
+      console.error(`Keine Daten: manifest.json HTTP ${manifestResp.status}`);
       return;
     }
     const text = await manifestResp.text();
@@ -628,21 +624,18 @@ async function load() {
         generated = parsed.generated || null;
       }
     } catch (e) {
-      status.textContent = `manifest.json ist kein gültiges JSON: ${e.message}`;
-      console.error("manifest body:", text);
+      console.error(`manifest.json ungültig: ${e.message}`, text);
       return;
     }
   } catch (e) {
-    status.textContent = "Netzwerkfehler beim Laden von manifest.json: " + e;
+    console.error("Netzwerkfehler manifest.json:", e);
     return;
   }
 
   if (!Array.isArray(manifest) || manifest.length === 0) {
-    status.textContent = "manifest.json enthält keine Class-A-Bereiche.";
+    console.error("manifest.json enthält keine Class-A-Bereiche.");
     return;
   }
-
-  status.textContent = `${manifest.length} Class-A-Bereiche werden geladen…`;
 
   buildGrid();
   syncOverlay();
@@ -689,13 +682,10 @@ async function load() {
     }
 
     done++;
-    status.textContent = `Lade ${done}/${manifest.length} Class A…`;
   }));
 
   ctx.putImageData(img, 0, 0);
   syncOverlay();
-
-  status.textContent = `Karte geladen (${manifest.length} von 256 Class-A-Bereichen).`;
 
   // Statistik anzeigen.
   const stats = document.getElementById("stats");
@@ -712,7 +702,5 @@ async function load() {
 }
 
 load().catch((e) => {
-  const status = document.getElementById("status");
-  status.textContent = "Fehler: " + e;
-  console.error(e);
+  console.error("Fehler beim Laden:", e);
 });
