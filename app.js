@@ -21,6 +21,8 @@ const overlay = document.getElementById("grid");
 const binCache = new Map();
 // Last-Modified-Datum pro Class A (aus dem HTTP-Header).
 const binDates = new Map();
+// generated-Timestamp aus manifest.json (Fallback wenn kein Last-Modified).
+let generated = null;
 
 // Platzhalter: Class-A-Nummer -> zugewiesener Zweck / Inhaber (für den Tooltip-Titel).
 // Nach und nach mit echten Zuweisungen füllen (z.B. aus IANA-Registrierungen).
@@ -428,7 +430,7 @@ function showInfo(classa, b, c, count) {
   infoClassA.textContent = `${classa} (${CLASSA_NAMES[classa] || "unbekannt"})`;
 
   const d = binDates.get(classa);
-  infoDate.textContent = d ? d.toLocaleString("de-DE") : "unbekannt";
+  infoDate.textContent = d ? d.toLocaleString("de-DE") : (generated ? new Date(generated).toLocaleString("de-DE") : "unbekannt");
 
   // Floating-Tooltip ebenfalls aktualisieren.
   const tooltip = document.getElementById("tooltip");
@@ -607,7 +609,7 @@ function setupSearch() {
 async function load() {
 
   let manifest;
-  let generated = null;
+  generated = null;
   try {
     const manifestResp = await fetch(DATA_BASE + "manifest.json");
     if (!manifestResp.ok) {
