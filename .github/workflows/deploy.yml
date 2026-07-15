@@ -1,0 +1,51 @@
+name: Deploy site to GitHub Pages
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: deploy site/ to gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "github-actions"
+
+          # site/ liegt auf dem getriggerten Branch (main) — sicher ablegen
+          cp -r site /tmp/site-deploy
+
+          for i in $(seq 1 20); do
+            git fetch origin gh-pages || true
+            git rebase --abort 2>/dev/null || true
+            git merge --abort 2>/dev/null || true
+
+            if git rev-parse --verify origin/gh-pages >/dev/null 2>&1; then
+              git checkout -B gh-pages origin/gh-pages
+              git reset --hard origin/gh-pages
+            else
+              git checkout -B gh-pages
+            fi
+
+            # Root des gh-pages-Branch auf exakt site/-Inhalt zuruecksetzen
+            git rm -r --cached . >/dev/null 2>&1 || true
+            rm -rf *
+            cp /tmp/site-deploy/* .
+
+            git add -A
+            git commit -m "deploy site: ${GITHUB_SHA}" || { echo "nothing to deploy"; break; }
+
+            if git push origin "HEAD:refs/heads/gh-pages"; then
+              echo "deployed to gh-pages"; break
+            fi
+            sleep 3
+          done
