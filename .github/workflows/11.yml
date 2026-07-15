@@ -51,12 +51,18 @@ jobs:
         run: |
           git config user.email "actions@github.com"
           git config user.name "github-actions"
-          git fetch origin result || true
-          git checkout -B result origin/result 2>/dev/null || git checkout -b result
-          git add results/*.txt
-          git commit -m "aggregate class A 176-191" || echo "nothing new"
-          for i in $(seq 1 12); do
-            git pull --rebase origin result 2>/dev/null || true
+          for i in $(seq 1 20); do
+            git fetch origin result || true
+            git rebase --abort 2>/dev/null || true
+            git merge --abort 2>/dev/null || true
+            if git rev-parse --verify origin/result >/dev/null 2>&1; then
+              git checkout -B result origin/result
+              git reset --hard origin/result
+            else
+              git checkout -B result
+            fi
+            git add results/*.txt
+            git commit -m "aggregate class A 176-191" || echo "nothing new"
             git push origin "HEAD:refs/heads/result" && break
             sleep 3
           done
@@ -64,17 +70,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          rm -rf /tmp/scan-data /tmp/render-out
-          mkdir -p /tmp/scan-data /tmp/render-out
-          git fetch origin result || true
-          git archive origin/result | tar -x -C /tmp/scan-data
-          python3 /tmp/render-tool/csv2bin.py /tmp/scan-data/results --out /tmp/render-out
-          git checkout -B result origin/result 2>/dev/null || git checkout -b result
-          cp /tmp/render-out/* .
-          git add .
-          git commit -m "render bin + manifest" || echo "nothing new"
-          for i in $(seq 1 12); do
-            git pull --rebase origin result 2>/dev/null || true
+          git config user.email "actions@github.com"
+          git config user.name "github-actions"
+          for i in $(seq 1 20); do
+            git fetch origin result || true
+            git rebase --abort 2>/dev/null || true
+            git merge --abort 2>/dev/null || true
+            if git rev-parse --verify origin/result >/dev/null 2>&1; then
+              git checkout -B result origin/result
+              git reset --hard origin/result
+              git clean -fd
+            else
+              git checkout -B result
+            fi
+            python3 /tmp/render-tool/csv2bin.py ./results --out .
+            git add '*.bin' manifest.json
+            git commit -m "render bin + manifest" || echo "nothing new"
             git push origin "HEAD:refs/heads/result" && break
             sleep 3
           done
