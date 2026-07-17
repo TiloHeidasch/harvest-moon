@@ -54,6 +54,7 @@ jobs:
             else
               git checkout -B result
             fi
+            rm -rf downloaded
             mv /tmp/downloaded-scans downloaded
             mkdir -p results
             for ca in 128 129 130 131 132 133 134 135 136 137 138 139 140 141 142 143 ; do

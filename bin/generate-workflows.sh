@@ -76,6 +76,7 @@ jobs:
             else
               git checkout -B result
             fi
+            rm -rf downloaded
             mv /tmp/downloaded-scans downloaded
             mkdir -p results
             for ca in $(seq -s ' ' "$a_start" 1 "$a_end"); do
