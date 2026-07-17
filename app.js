@@ -415,7 +415,6 @@ const infoNet = document.getElementById("infoNet");
 const infoName = document.getElementById("infoName");
 const infoHosts = document.getElementById("infoHosts");
 const infoClassA = document.getElementById("infoClassA");
-const infoDate = document.getElementById("infoDate");
 
 function showInfo(classa, b, c, count) {
   const title =
@@ -430,9 +429,6 @@ function showInfo(classa, b, c, count) {
   infoName.textContent = title;
   infoHosts.textContent = countLabel;
   infoClassA.textContent = `${classa} (${CLASSA_NAMES[classa] || "unbekannt"})`;
-
-  const d = dataDate || binDates.get(classa) || (generated ? new Date(generated) : null);
-  infoDate.textContent = d ? d.toLocaleString("de-DE") : "unbekannt";
 
   // Floating-Tooltip ebenfalls aktualisieren.
   const tooltip = document.getElementById("tooltip");
