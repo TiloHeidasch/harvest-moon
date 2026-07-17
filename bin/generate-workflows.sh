@@ -15,7 +15,7 @@ for g in $(seq 0 15); do
 
     # stagger by 30 min, starting 21:00 UTC (= 22:00 CET) for g=0,
     # finishing 05:00 UTC (= 06:00 CET) for g=15
-    start_min=$(( (21 * 60) + g * 30 ))
+    start_min=$(( (19 * 60) + g * 30 ))
     cron_min=$(( start_min % 60 ))
     cron_hr=$(( (start_min / 60) % 24 ))
 
