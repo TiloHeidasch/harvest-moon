@@ -69,12 +69,14 @@ jobs:
             git fetch origin result || true
             git rebase --abort 2>/dev/null || true
             git merge --abort 2>/dev/null || true
+            mv downloaded /tmp/downloaded-scans
             if git rev-parse --verify origin/result >/dev/null 2>&1; then
               git checkout -B result origin/result
               git reset --hard origin/result
             else
               git checkout -B result
             fi
+            mv /tmp/downloaded-scans downloaded
             mkdir -p results
             for ca in $(seq -s ' ' "$a_start" 1 "$a_end"); do
               find downloaded -maxdepth 1 -name "\${ca}.*.txt" -exec cat {} + | sort -t. -k2,2n -k3,3n > "results/\${ca}.txt"
@@ -98,6 +100,7 @@ jobs:
             git fetch origin result || true
             git rebase --abort 2>/dev/null || true
             git merge --abort 2>/dev/null || true
+            rm -rf results
             if git rev-parse --verify origin/result >/dev/null 2>&1; then
               git checkout -B result origin/result
               git reset --hard origin/result
