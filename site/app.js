@@ -23,6 +23,8 @@ const binCache = new Map();
 const binDates = new Map();
 // generated-Timestamp aus manifest.json (Fallback wenn kein Last-Modified).
 let generated = null;
+// Commit-Datum des result-Branches via GitHub-API (primäre Datenstands-Quelle).
+let dataDate = null;
 
 // Platzhalter: Class-A-Nummer -> zugewiesener Zweck / Inhaber (für den Tooltip-Titel).
 // Nach und nach mit echten Zuweisungen füllen (z.B. aus IANA-Registrierungen).
@@ -429,8 +431,8 @@ function showInfo(classa, b, c, count) {
   infoHosts.textContent = countLabel;
   infoClassA.textContent = `${classa} (${CLASSA_NAMES[classa] || "unbekannt"})`;
 
-  const d = binDates.get(classa);
-  infoDate.textContent = d ? d.toLocaleString("de-DE") : (generated ? new Date(generated).toLocaleString("de-DE") : "unbekannt");
+  const d = dataDate || binDates.get(classa) || (generated ? new Date(generated) : null);
+  infoDate.textContent = d ? d.toLocaleString("de-DE") : "unbekannt";
 
   // Floating-Tooltip ebenfalls aktualisieren.
   const tooltip = document.getElementById("tooltip");
@@ -639,6 +641,18 @@ async function load() {
     return;
   }
 
+  // Datum des letzten Commits auf dem result-Branch via GitHub-API.
+  try {
+    const branchResp = await fetch("https://api.github.com/repos/TiloHeidasch/harvest-moon/branches/result");
+    if (branchResp.ok) {
+      const branchData = await branchResp.json();
+      const commitDate = branchData?.commit?.commit?.committer?.date;
+      if (commitDate) dataDate = new Date(commitDate);
+    }
+  } catch (e) {
+    console.warn("GitHub-API nicht erreichbar:", e);
+  }
+
   buildGrid();
   syncOverlay();
   setupHover();
@@ -698,9 +712,9 @@ async function load() {
     `${totalNetworks.toLocaleString("de-DE")} /24 mit Hosts`;
   document.getElementById("statHosts").textContent =
     `${totalHosts.toLocaleString("de-DE")} live Hosts gesamt`;
-  const updated = newestBin ? newestBin.toLocaleString("de-DE") : (generated ? new Date(generated).toLocaleString("de-DE") : null);
+  const updated = dataDate || newestBin || (generated ? new Date(generated) : null);
   document.getElementById("statUpdated").textContent =
-    `Zuletzt aktualisiert: ${updated || "unbekannt"}`;
+    `Zuletzt aktualisiert: ${updated ? updated.toLocaleString("de-DE") : "unbekannt"}`;
 }
 
 load().catch((e) => {
