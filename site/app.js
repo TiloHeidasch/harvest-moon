@@ -366,13 +366,45 @@ function setPixel(x, y, rgb) {
 
 // Faint grid overlay: major lines + Class-A labels (0–255), drawn in %-Koordinaten,
 // damit es bei jeder Canvas-Skalierung scharf bleibt.
-function buildGrid() {
+// `available` = Set der Class-A-Nummern, für die Scan-Daten vorliegen (aus dem
+// Manifest); alle anderen bekommen eine Schraffur, damit "keine Daten" optisch
+// von einem echten 0-Hosts-Ergebnis unterscheidbar bleibt.
+function buildGrid(available) {
   const NS = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(NS, "svg");
   svg.setAttribute("viewBox", "0 0 100 100");
   svg.setAttribute("preserveAspectRatio", "none");
 
+  const defs = document.createElementNS(NS, "defs");
+  const pattern = document.createElementNS(NS, "pattern");
+  pattern.setAttribute("id", "nodata-hatch");
+  pattern.setAttribute("width", "1.2");
+  pattern.setAttribute("height", "1.2");
+  pattern.setAttribute("patternTransform", "rotate(45)");
+  pattern.setAttribute("patternUnits", "userSpaceOnUse");
+  const hatchLine = document.createElementNS(NS, "line");
+  hatchLine.setAttribute("x1", "0"); hatchLine.setAttribute("y1", "0");
+  hatchLine.setAttribute("x2", "0"); hatchLine.setAttribute("y2", "1.2");
+  hatchLine.setAttribute("stroke", "rgba(200, 220, 255, 0.28)");
+  hatchLine.setAttribute("stroke-width", "0.5");
+  pattern.appendChild(hatchLine);
+  defs.appendChild(pattern);
+  svg.appendChild(defs);
+
   const step = 100 / 16; // 6.25% pro Class A
+
+  for (let classa = 0; classa < 256; classa++) {
+    if (available && available.has(classa)) continue;
+    const [ax, ay] = classAOffset(classa);
+    const rect = document.createElementNS(NS, "rect");
+    rect.setAttribute("x", (ax * step).toFixed(4));
+    rect.setAttribute("y", (ay * step).toFixed(4));
+    rect.setAttribute("width", step.toFixed(4));
+    rect.setAttribute("height", step.toFixed(4));
+    rect.setAttribute("fill", "url(#nodata-hatch)");
+    svg.appendChild(rect);
+  }
+
   for (let i = 0; i <= 16; i++) {
     const p = (i * step).toFixed(4);
     const v = document.createElementNS(NS, "line");
@@ -468,6 +500,7 @@ function clearBlockHighlight() {
 // --- Zoom / Navigation -------------------------------------------------------
 
 let zoomedClassA = null;
+const breadcrumb = document.getElementById("breadcrumb");
 
 function zoomToClassA(classa) {
   const [ax, ay] = classAOffset(classa);
@@ -484,6 +517,8 @@ function zoomToClassA(classa) {
   wrap.scrollTop = ay * classAViewW;
   zoomedClassA = classa;
   document.getElementById("resetBtn").hidden = false;
+  breadcrumb.hidden = false;
+  breadcrumb.textContent = `Ansicht: Class A ${classa} (${CLASSA_NAMES[classa] || "unbekannt"})`;
 }
 
 function resetZoom() {
@@ -494,6 +529,7 @@ function resetZoom() {
   wrap.scrollTop = 0;
   zoomedClassA = null;
   document.getElementById("resetBtn").hidden = true;
+  breadcrumb.hidden = true;
   cellHighlight.hidden = true;
   clearBlockHighlight();
 }
@@ -526,6 +562,22 @@ function gotoClassA(classa, b, c, centerNet) {
 
 // --- Hover -------------------------------------------------------------------
 
+// Platziert den Tooltip rechts/unterhalb des Cursors, klappt aber auf die
+// jeweils andere Seite um, wenn sonst der Viewport-Rand überschritten würde.
+function positionTooltip(tooltip, clientX, clientY) {
+  const margin = 14;
+  const { width, height } = tooltip.getBoundingClientRect();
+
+  let left = clientX + margin;
+  if (left + width > window.innerWidth) left = clientX - margin - width;
+
+  let top = clientY + margin;
+  if (top + height > window.innerHeight) top = clientY - margin - height;
+
+  tooltip.style.left = Math.max(0, left) + "px";
+  tooltip.style.top = Math.max(0, top) + "px";
+}
+
 function setupHover() {
   const tooltip = document.getElementById("tooltip");
 
@@ -543,9 +595,7 @@ function setupHover() {
 
     setHighlights(classa, bx, by);
     showInfo(classa, b, c, count);
-
-    tooltip.style.left = (e.clientX + 14) + "px";
-    tooltip.style.top = (e.clientY + 14) + "px";
+    positionTooltip(tooltip, e.clientX, e.clientY);
   });
 
   canvas.addEventListener("mouseleave", () => {
@@ -600,9 +650,28 @@ function setupSearch() {
 
   btn.addEventListener("click", run);
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
+
+  // Globale Shortcuts: "/" fokussiert die Suche, "Escape" verlässt den Zoom.
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "/" && document.activeElement !== input) {
+      e.preventDefault();
+      input.focus();
+    } else if (e.key === "Escape") {
+      if (document.activeElement === input) input.blur();
+      if (zoomedClassA !== null) resetZoom();
+    }
+  });
 }
 
 // --- Laden -------------------------------------------------------------------
+
+const loadingOverlay = document.getElementById("loadingOverlay");
+const loadingText = document.getElementById("loadingText");
+
+function loadingFailed(msg) {
+  loadingText.textContent = msg;
+  loadingOverlay.querySelector(".spinner").hidden = true;
+}
 
 async function load() {
 
@@ -612,6 +681,7 @@ async function load() {
     const manifestResp = await fetch(DATA_BASE + "manifest.json");
     if (!manifestResp.ok) {
       console.error(`Keine Daten: manifest.json HTTP ${manifestResp.status}`);
+      loadingFailed("Fehler: Manifest konnte nicht geladen werden.");
       return;
     }
     const text = await manifestResp.text();
@@ -625,15 +695,18 @@ async function load() {
       }
     } catch (e) {
       console.error(`manifest.json ungültig: ${e.message}`, text);
+      loadingFailed("Fehler: Manifest ist ungültig.");
       return;
     }
   } catch (e) {
     console.error("Netzwerkfehler manifest.json:", e);
+    loadingFailed("Fehler: Manifest nicht erreichbar.");
     return;
   }
 
   if (!Array.isArray(manifest) || manifest.length === 0) {
     console.error("manifest.json enthält keine Class-A-Bereiche.");
+    loadingFailed("Keine Class-A-Bereiche im Manifest.");
     return;
   }
 
@@ -649,7 +722,7 @@ async function load() {
     console.warn("GitHub-API nicht erreichbar:", e);
   }
 
-  buildGrid();
+  buildGrid(new Set(manifest));
   syncOverlay();
   setupHover();
   setupSearch();
@@ -661,11 +734,15 @@ async function load() {
   let totalNetworks = 0;
   let totalHosts = 0;
   let newestBin = null;
+  const updateLoadingText = () =>
+    loadingText.textContent = `Lade Class-A-Daten: ${done} / ${manifest.length}`;
+  updateLoadingText();
   await Promise.all(manifest.map(async (classa) => {
     const resp = await fetch(DATA_BASE + classa + ".bin");
     if (!resp.ok) {
       console.warn(`übersprungen (HTTP ${resp.status}): ${classa}.bin`);
       done++;
+      updateLoadingText();
       return;
     }
     const buf = new Uint8Array(await resp.arrayBuffer());
@@ -694,10 +771,12 @@ async function load() {
     }
 
     done++;
+    updateLoadingText();
   }));
 
   ctx.putImageData(img, 0, 0);
   syncOverlay();
+  loadingOverlay.classList.add("done");
 
   // Statistik anzeigen.
   const stats = document.getElementById("stats");
@@ -715,4 +794,5 @@ async function load() {
 
 load().catch((e) => {
   console.error("Fehler beim Laden:", e);
+  loadingFailed("Unerwarteter Fehler beim Laden.");
 });
