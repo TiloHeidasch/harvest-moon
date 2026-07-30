@@ -49,6 +49,24 @@ header .hint strong { color: #bcd; }
 }
 .search button:hover, #resetBtn:hover { background: #244069; }
 .search-msg { color: #f6a37a; font-size: .82rem; }
+kbd {
+  font: 11px ui-monospace, monospace;
+  color: #9ab;
+  background: #1a1a28;
+  border: 1px solid #333;
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-left: .3rem;
+}
+.breadcrumb {
+  color: #cde;
+  font-size: .85rem;
+  background: #16213a;
+  border: 1px solid #2a4a7a;
+  border-radius: 5px;
+  padding: .3rem .6rem;
+}
 
 main { padding: 1rem 1.25rem 2rem; }
 
@@ -83,6 +101,34 @@ canvas {
   left: 0;
   pointer-events: none;
 }
+
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .75rem;
+  background: rgba(6, 6, 12, 0.88);
+  color: #bcd;
+  font-size: .9rem;
+  z-index: 6;
+  transition: opacity .3s ease;
+}
+.loading-overlay.done {
+  opacity: 0;
+  pointer-events: none;
+}
+.spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 3px solid #223;
+  border-top-color: #4ab6ff;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 .grid-overlay svg {
   width: 100%;
@@ -151,6 +197,7 @@ canvas {
   flex-wrap: wrap;
 }
 .legend .bar {
+  position: relative;
   height: 14px;
   flex: 1 1 200px;
   min-width: 160px;
@@ -158,8 +205,29 @@ canvas {
   background: linear-gradient(90deg,
     rgb(0,0,90), rgb(0,120,255), rgb(0,230,120), rgb(255,230,0), rgb(255,50,0));
 }
+.legend .bar .tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(0, 0, 0, 0.35);
+}
 .legend-label { font-size: .8rem; color: #9aa; }
 .legend-note { font-size: .78rem; color: #788; flex-basis: 100%; }
+.legend-hatch { display: flex; align-items: center; gap: .4rem; }
+.hatch-swatch {
+  display: inline-block;
+  width: 22px;
+  height: 12px;
+  border-radius: 2px;
+  border: 1px solid #333;
+  background-color: #06060c;
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(200, 220, 255, 0.35) 0, rgba(200, 220, 255, 0.35) 1.5px,
+    transparent 1.5px, transparent 5px
+  );
+}
 
 /* Infopanel */
 .info-panel {
