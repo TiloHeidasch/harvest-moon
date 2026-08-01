@@ -1,9 +1,4 @@
-// Datenquelle:
-//  - Site + Daten auf demselben Branch (z.B. GitHub Pages von 'result'):
-//      const DATA_BASE = "./";
-//  - Site auf 'gh-pages', Daten auf 'result' (raw.githubusercontent, CORS *):
-//      const DATA_BASE = "https://raw.githubusercontent.com/OWNER/REPO/result/";
-const DATA_BASE = "https://raw.githubusercontent.com/TiloHeidasch/harvest-moon/result/";
+import { loadResult } from "./result-loader.mjs";
 
 const SIZE = 4096;          // Gesamtbild: 4096 x 4096 Pixel
 const CLASSA_PX = 256;      // eine Class A = 256 x 256 Pixel (256*256 /24)
@@ -19,12 +14,6 @@ const overlay = document.getElementById("grid");
 
 // Geladene Class-A-Binärdateien (classa -> Uint8Array) für Live-Lookup beim Hover.
 const binCache = new Map();
-// Last-Modified-Datum pro Class A (aus dem HTTP-Header).
-const binDates = new Map();
-// generated-Timestamp aus manifest.json (Fallback wenn kein Last-Modified).
-let generated = null;
-// Commit-Datum des result-Branches via GitHub-API (primäre Datenstands-Quelle).
-let dataDate = null;
 
 // Platzhalter: Class-A-Nummer -> zugewiesener Zweck / Inhaber (für den Tooltip-Titel).
 // Nach und nach mit echten Zuweisungen füllen (z.B. aus IANA-Registrierungen).
@@ -671,91 +660,34 @@ const loadingText = document.getElementById("loadingText");
 function loadingFailed(msg) {
   loadingText.textContent = msg;
   loadingOverlay.querySelector(".spinner").hidden = true;
+  loadingOverlay.classList.add("failed");
 }
 
 async function load() {
-
-  let manifest;
-  generated = null;
+  const error = document.getElementById("loadError");
+  const warning = document.getElementById("loadWarning");
   try {
-    const manifestResp = await fetch(DATA_BASE + "manifest.json");
-    if (!manifestResp.ok) {
-      console.error(`Keine Daten: manifest.json HTTP ${manifestResp.status}`);
-      loadingFailed("Fehler: Manifest konnte nicht geladen werden.");
-      return;
-    }
-    const text = await manifestResp.text();
-    try {
-      const parsed = JSON.parse(text);
-      if (Array.isArray(parsed)) {
-        manifest = parsed;
-      } else {
-        manifest = parsed.classas || [];
-        generated = parsed.generated || null;
-      }
-    } catch (e) {
-      console.error(`manifest.json ungültig: ${e.message}`, text);
-      loadingFailed("Fehler: Manifest ist ungültig.");
-      return;
-    }
-  } catch (e) {
-    console.error("Netzwerkfehler manifest.json:", e);
-    loadingFailed("Fehler: Manifest nicht erreichbar.");
-    return;
-  }
-
-  if (!Array.isArray(manifest) || manifest.length === 0) {
-    console.error("manifest.json enthält keine Class-A-Bereiche.");
-    loadingFailed("Keine Class-A-Bereiche im Manifest.");
-    return;
-  }
-
-  // Datum des letzten Commits auf dem result-Branch via GitHub-API.
-  try {
-    const branchResp = await fetch("https://api.github.com/repos/TiloHeidasch/harvest-moon/branches/result");
-    if (branchResp.ok) {
-      const branchData = await branchResp.json();
-      const commitDate = branchData?.commit?.commit?.committer?.date;
-      if (commitDate) dataDate = new Date(commitDate);
-    }
-  } catch (e) {
-    console.warn("GitHub-API nicht erreichbar:", e);
-  }
-
-  buildGrid(new Set(manifest));
-  syncOverlay();
-  setupHover();
-  setupSearch();
-  document.getElementById("resetBtn")
-    .addEventListener("click", resetZoom);
-  window.addEventListener("resize", syncOverlay);
-
-  let done = 0;
-  let totalNetworks = 0;
-  let totalHosts = 0;
-  let newestBin = null;
-  const updateLoadingText = () =>
-    loadingText.textContent = `Lade Class-A-Daten: ${done} / ${manifest.length}`;
-  updateLoadingText();
-  await Promise.all(manifest.map(async (classa) => {
-    const resp = await fetch(DATA_BASE + classa + ".bin");
-    if (!resp.ok) {
-      console.warn(`übersprungen (HTTP ${resp.status}): ${classa}.bin`);
-      done++;
-      updateLoadingText();
-      return;
-    }
-    const buf = new Uint8Array(await resp.arrayBuffer());
-    binCache.set(classa, buf);
-
-    const lm = resp.headers.get("last-modified");
-    if (lm) {
-      const d = new Date(lm);
-      binDates.set(classa, d);
-      if (!newestBin || d > newestBin) newestBin = d;
-    }
-    const [gx, gy] = classAOffset(classa);
-
+    loadingText.textContent = "Löse unveränderlichen Datenstand auf…";
+    const result = await loadResult({
+      onProgress: (done, total) => {
+        loadingText.textContent = `Prüfe Class-A-Daten: ${done} / ${total}`;
+      },
+    });
+    const { manifest, assets } = result;
+    // The loader has verified every temporary buffer before the UI is changed.
+    buildGrid(new Set(manifest.classas));
+    syncOverlay();
+    setupHover();
+    setupSearch();
+    document.getElementById("resetBtn")
+      .addEventListener("click", resetZoom);
+    window.addEventListener("resize", syncOverlay);
+    let totalNetworks = 0;
+    let totalHosts = 0;
+    // Loader returns only verified temporary buffers. Publish them atomically here.
+    for (const [classa, buf] of assets) {
+      binCache.set(classa, buf);
+      const [gx, gy] = classAOffset(classa);
     for (let off = 0; off < buf.length; off++) {
       const v = buf[off];
       if (!v) continue;
@@ -769,30 +701,44 @@ async function load() {
       const y = gy * CLASSA_PX + yin;
       setPixel(x, y, heat(v / 255));
     }
+    }
 
-    done++;
-    updateLoadingText();
-  }));
+    ctx.putImageData(img, 0, 0);
+    syncOverlay();
+    loadingText.textContent = `Class-A-Daten geprüft: ${manifest.classas.length} / ${manifest.classas.length}`;
+    loadingOverlay.classList.add("done");
 
-  ctx.putImageData(img, 0, 0);
-  syncOverlay();
-  loadingOverlay.classList.add("done");
-
-  // Statistik anzeigen.
-  const stats = document.getElementById("stats");
-  stats.hidden = false;
-  document.getElementById("statClassA").textContent =
-    `${manifest.length} von 256 Class-A-Bereichen`;
+    // Statistik anzeigen.
+    const stats = document.getElementById("stats");
+    stats.hidden = false;
+    document.getElementById("statClassA").textContent =
+      `${manifest.classas.length} von 256 Class-A-Bereichen`;
   document.getElementById("statNetworks").textContent =
     `${totalNetworks.toLocaleString("de-DE")} /24 mit Hosts`;
   document.getElementById("statHosts").textContent =
     `${totalHosts.toLocaleString("de-DE")} live Hosts gesamt`;
-  const updated = dataDate || newestBin || (generated ? new Date(generated) : null);
-  document.getElementById("statUpdated").textContent =
-    `Zuletzt aktualisiert: ${updated ? updated.toLocaleString("de-DE") : "unbekannt"}`;
+    document.getElementById("statUpdated").textContent =
+      `Zuletzt aktualisiert: ${result.commitDate.toLocaleString("de-DE")} · Commit ${result.commitSha.slice(0, 10)}`;
+    if (result.hasUnverified) {
+      warning.textContent = "Hinweis: Ein Teil der Daten ist noch nicht verifiziert. Summen sind unvollständig und keine vollständige Netzabdeckung.";
+      warning.hidden = false;
+      document.getElementById("statNetworks").textContent += " (unvollständig/unverifiziert)";
+      document.getElementById("statHosts").textContent += " (unvollständig/unverifiziert)";
+    }
+  } catch (e) {
+    binCache.clear();
+    document.getElementById("stats").hidden = true;
+    error.textContent = `Die Daten konnten nicht sicher geladen werden. ${e.message || "Bitte später erneut versuchen."}`;
+    error.hidden = false;
+    loadingFailed("Laden fehlgeschlagen. Es wurden keine Teildaten angezeigt.");
+    console.error("Fehler beim Laden:", e);
+  }
 }
 
 load().catch((e) => {
   console.error("Fehler beim Laden:", e);
+  const error = document.getElementById("loadError");
+  error.textContent = `Die Daten konnten nicht sicher geladen werden. ${e.message || "Bitte später erneut versuchen."}`;
+  error.hidden = false;
   loadingFailed("Unerwarteter Fehler beim Laden.");
 });
