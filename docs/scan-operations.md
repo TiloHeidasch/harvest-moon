@@ -94,17 +94,19 @@ delay also bounded. The hard caps remain finite at four workers, 50 packets/s
 per child (200 packets/s aggregate), and 180 seconds per attempt; changing
 them requires a code and documentation review.
 
-The workflow intentionally selects the reviewed maximum of four workers. With
-at most two matrix jobs running at once, the repository-wide workflow envelope
-is `2 × 4 × 25 = 200 packets/second`. A Class-B job's two attempts are planned
-at about 257 minutes in the worst case, below the six-hour hosted-job limit.
-Each dispatch selects exactly one Class A and one 64-Class-B block beginning at
-`0`, `64`, `128`, or `192`; it therefore has 64 one-Class-B jobs. Even at one
-job at a time, each four-cell wave completes in `4 × 257 = 1,028 minutes`
-(17.1 hours), and its last cell starts after `3 × 257 = 771 minutes` (12.85
-hours). Sixteen dependency-gated waves therefore take about 11.4 days at
-parallelism 1 or 5.7 days at 2, both below GitHub's 35-day workflow limit and
-without a cell waiting behind `max-parallel` for 24 hours.
+The workflow intentionally uses the reviewed maximum of four workers and two
+matrix jobs. The repository-wide workflow envelope is
+`2 × 4 × 25 = 200 packets/second`. A Class-B job's two attempts are planned at
+about 257 minutes in the worst case, below the six-hour hosted-job limit.
+Every bare workflow click derives `slot=(run_number-1)%64`,
+`class_a=workflow_a_start+slot/4`, and
+`class_b_block_start=(slot%4)*64`; it therefore scans exactly one Class A ×
+one 64-Class-B tile. In each four-cell wave, the last cell starts after
+`3 × 257 = 771 minutes` (12.85 hours) and the wave completes after
+`4 × 257 = 1,028 minutes` (17.1 hours). Sixteen dependency-gated waves take
+about 5.7 days at the fixed parallelism 2 (11.4 days at 1), below GitHub's
+35-day workflow limit and without a cell waiting behind `max-parallel` for 24
+hours. Four runs cover one Class A; 64 runs cover the workflow's 16 × 4 tiles.
 
 The exact fixed scanner arguments are:
 
@@ -153,14 +155,12 @@ is the only optional provenance field.
 
 ## Phase 3 artifact and publication contract
 
-Numbered workflows are dispatch-only; they contain no `schedule` or cron
-trigger. A dispatch must come from the repository default branch, use the exact
-`I_HAVE_WRITTEN_AUTHORIZATION` acknowledgement, and run in the protected
-`internet-scan` environment. Written provider permission and the protected
-environment approvals are operational prerequisites, not values that CI can
-simulate or bypass. The matrix concurrency dispatch choice is limited to 1 or
-2, with 1 as the default. Scan permissions are read-only; only aggregation has
-`contents: write`.
+Numbered workflows are input-free and dispatch-only; they contain no `schedule`
+or cron trigger. A dispatch must come from the repository default branch and run
+in the protected `internet-scan` environment. Provider permission for the
+deterministically selected scope and environment approvals are operational
+prerequisites, not values that CI can simulate or bypass. Scan permissions are
+read-only; only aggregation has `contents: write`.
 
 The 64 selected Class-B cells run in 16 dependency-gated waves of four cells.
 Each wave waits for the preceding wave, so at parallelism 1 the final cell of a

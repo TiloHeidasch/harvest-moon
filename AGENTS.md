@@ -8,12 +8,12 @@ pro `/24` einen Helligkeitswert (Host-Anzahl) — ausgeliefert als `.bin`
 
 - **16 Workflows** (`.github/workflows/0.yml` … `15.yml`), jeder deckt **16 aufeinanderfolgende
   Class A** ab (Workflow `g` = Class A `g*16` … `g*16+15`, also `0.yml` → 0–15, `15.yml` → 240–255).
-- Ein manueller Lauf wählt genau **eine Class A** aus dem 16er-Bereich seines Workflows
-  und einen 64-Class-B-Block ab `0`, `64`, `128` oder `192`. Die 64 Zellen laufen in
-  16 dependency-gated Scan-Waves mit je vier Class-B-Offsets (`0…3`); jede Wave
-  wartet auf die vorige. Die laufende Parallelität ist per Dispatch auf 1 oder 2
-  begrenzt (Standard 1), sodass keine Matrixzelle länger als 24 Stunden hinter
-  `max-parallel` wartet.
+- Ein Klick auf `Run workflow` startet ohne Eingaben einen deterministischen Tile-Lauf.
+  Aus `github.run_number` wird `slot=(run_number-1)%64` berechnet; Class A ist der
+  Workflow-Start plus `slot/4`, der 64-Class-B-Block ist `(slot%4)*64`. Die 64 Zellen
+  laufen in 16 dependency-gated Scan-Waves mit je vier Class-B-Offsets (`0…3`);
+  jede Wave wartet auf die vorige. Die laufende Parallelität ist fest auf 2 begrenzt,
+  sodass keine Matrixzelle länger als 24 Stunden hinter `max-parallel` wartet.
 - Jeder Job ruft `scan-classb.sh <classa> <classb> 1` auf. Der Executor bleibt intern
   hart begrenzt; der Workflow verwendet geprüft `SCAN_WORKERS=4`,
   `NMAP_MAX_RATE=25`, `NMAP_TIMEOUT_SECONDS=120`, `SCAN_ATTEMPTS=2` und
@@ -66,10 +66,9 @@ Template einfach neu ausführen:
 ```
 
 Jede `N.yml` (N = 0…15) enthält:
-- eine Class-A-Auswahl aus `N*16…N*16+15`, eine Block-Auswahl (`0`, `64`, `128`,
-  `192`) und 16 abhängige Scan-Waves mit je `classb_offset: [0,1,2,3]`
-  (insgesamt 64 Jobs; die tatsächliche Class B ist Blockstart plus Wave-Basis
-  plus Offset)
+- eine input-freie `select_scope`-Job-Auswahl aus `github.run_number` und 16
+  abhängige Scan-Waves mit je `classb_offset: [0,1,2,3]` (insgesamt 64 Jobs;
+  die tatsächliche Class B ist berechneter Block plus Wave-Basis plus Offset)
 - je Wave einen Scan-Job: berechnet die kanonische Class B aus Blockstart und
   Offset in Bash und ruft `scan-classb.sh <classa> <classb> 1` auf
 - einen `aggregate`-Job, der alle 16 Waves benötigt, die Tar-Envelope-Archive
@@ -119,31 +118,34 @@ y_global = ay * 256 + y_in_classA
 
 ## CI (`.github/workflows/*.yml`)
 
-Nur durch `workflow_dispatch` aus dem Default-Branch ausgelöst. Es gibt keinen
-automatischen Zeitplan. Vor dem Start müssen die exakte Bestätigung
-`I_HAVE_WRITTEN_AUTHORIZATION`, die geschriebene Provider-Erlaubnis und die
-Freigaben des geschützten GitHub-Environments `internet-scan` vorliegen; diese
-Environment-/Provider-Freigaben sind operative Voraussetzungen und werden
-nicht vom Repository simuliert.
+Nur durch einen manuellen Klick auf `workflow_dispatch` aus dem Default-Branch
+ausgelöst. Es gibt keinen automatischen Zeitplan und keine Dispatch-Eingaben.
+Vor dem Start müssen die geschriebene Provider-Erlaubnis und die Freigaben des
+geschützten GitHub-Environments `internet-scan` vorliegen; diese
+Environment-/Provider-Freigaben sind operative Voraussetzungen und werden nicht
+vom Repository simuliert.
 
 Nutzt `nmap -sn` (TCP-SYN, da ICMP auf GitHub blockiert ist). Die Seite rendert
 die Binärdaten client-seitig; CI erzeugt keine PNG-Dateien.
 
 ### Scan-Modus
-16 Workflows (0.yml – 15.yml), jeder mit einer Auswahl aus 16 Class A. Ein Lauf
-wählt genau eine davon und einen 64-Class-B-Block (`0`, `64`, `128` oder `192`)
-und erzeugt 16 dependency-gated Scan-Wave-Jobs mit je vier Matrix-Zellen
-(`classa: [selected]` × `classb_offset: [0,1,2,3]`); jeder Job scannt genau eine
-Class B. Jede Wave wartet auf die vorige. Die Matrix ist über die Dispatch-Auswahl
-sicher auf 1 oder 2 parallele Jobs begrenzt (Standard 1), sodass keine Zelle
-länger als 24 Stunden hinter `max-parallel` wartet.
+16 Workflows (0.yml – 15.yml) leiten bei jedem Klick aus `github.run_number`
+deterministisch einen Tile ab: `slot=(run_number-1)%64`,
+`class_a=workflow_a_start+slot/4`, `class_b_block_start=(slot%4)*64`.
+Ein Lauf scannt genau eine Class A × einen 64-Class-B-Block und erzeugt 16
+dependency-gated Scan-Wave-Jobs mit je vier Matrix-Zellen
+(`classb_offset: [0,1,2,3]`); jeder Job scannt genau eine Class B. Jede Wave
+wartet auf die vorige. Die Matrix ist fest auf 2 parallele Jobs begrenzt,
+sodass keine Zelle länger als 24 Stunden hinter `max-parallel` wartet.
 Der Job läuft höchstens 360 Minuten. Bei zwei Versuchen dauert ein worst-case
 Class-B-Job nach der konservativen Planung etwa 257 Minuten; die letzte Zelle
 einer Wave beginnt bei Parallelität 1 nach etwa `3 × 257 = 771 Minuten`
 (12,85 Stunden), die Wave endet nach `4 × 257 = 1.028 Minuten` (17,1 Stunden).
-Alle 16 Waves dauern damit bei Parallelität 1 etwa `16 × 17,1 = 274 Stunden`
-(11,4 Tage), bei 2 etwa 5,7 Tage, jeweils unter dem 35-Tage-Limit. Die Workflow- und
-Executor-Bounds ergeben höchstens `2 × 4 × 25 = 200` Pakete/s repositoryweit.
+Alle 16 Waves dauern damit bei Parallelität 2 etwa 5,7 Tage (bei 1 etwa 11,4
+Tage), jeweils unter dem 35-Tage-Limit. Die 64 Tiles eines Workflows werden
+über 64 aufeinanderfolgende Klicks abgedeckt; vier Klicks decken eine Class A
+ab. Die Workflow- und Executor-Bounds ergeben höchstens
+`2 × 4 × 25 = 200` Pakete/s repositoryweit.
 Die Workflows setzen ausdrücklich `SCAN_WORKERS=4`, `NMAP_MAX_RATE=25`,
 `NMAP_TIMEOUT_SECONDS=120`, `SCAN_ATTEMPTS=2` und `SCAN_RETRY_DELAY=1`; diese
 Werte überschreiten die festen Executor-Hard-Caps nicht.

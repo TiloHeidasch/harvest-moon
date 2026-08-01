@@ -10,48 +10,14 @@ classb_offset_list=$(seq -s, 0 1 3)
 classb_offset_list="${classb_offset_list%,}"
 
 for g in $(seq 0 15); do
-    a_start=$((g * 16))
-    a_end=$((g * 16 + 15))
+    workflow_a_start=$((g * 16))
 
     {
         cat <<EOF
-name: Scan Class A $a_start-$a_end
+name: Scan Class A $workflow_a_start-$(($workflow_a_start + 15))
 
 on:
   workflow_dispatch:
-    inputs:
-      authorization_acknowledgement:
-        description: 'Type the exact confirmation for this selected Class-A scope.'
-        required: true
-        type: string
-      class_a:
-        description: 'Select exactly one Class A owned by this workflow.'
-        required: true
-        type: choice
-        options:
-EOF
-        for class_a in $(seq "$a_start" 1 "$a_end"); do
-            printf "          - '%s'\n" "$class_a"
-        done
-        cat <<EOF
-      class_b_block_start:
-        description: 'Select one contiguous 64-Class-B block for this run.'
-        required: true
-        type: choice
-        options:
-          - '0'
-          - '64'
-          - '128'
-          - '192'
-        default: '0'
-      matrix_max_parallel:
-        description: 'Maximum concurrent scan jobs (provider-approved choice).'
-        required: true
-        type: choice
-        options:
-          - '1'
-          - '2'
-        default: '1'
 
 permissions:
   contents: read
@@ -62,15 +28,58 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  select_scope:
+    name: Select deterministic scan tile
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      class_a: \${{ steps.scope.outputs.class_a }}
+      class_b_block_start: \${{ steps.scope.outputs.class_b_block_start }}
+    steps:
+      - id: scope
+        env:
+          RUN_NUMBER: \${{ github.run_number }}
+          WORKFLOW_A_START: $workflow_a_start
+        run: |
+          set -euo pipefail
+          if [[ ! "\$RUN_NUMBER" =~ ^(0|[1-9][0-9]*)$ ]] || (( 10#\$RUN_NUMBER < 1 )); then
+            printf 'invalid github.run_number: %s\n' "\$RUN_NUMBER" >&2
+            exit 1
+          fi
+          if [[ ! "\$WORKFLOW_A_START" =~ ^(0|[1-9][0-9]*)$ ]]; then
+            printf 'invalid workflow Class-A start: %s\n' "\$WORKFLOW_A_START" >&2
+            exit 1
+          fi
+          workflow_a_start=\$((10#\$WORKFLOW_A_START))
+          if (( workflow_a_start < 0 || workflow_a_start > 240 || workflow_a_start % 16 != 0 )); then
+            printf 'workflow Class-A start is outside its canonical range: %s\n' "\$workflow_a_start" >&2
+            exit 1
+          fi
+          slot=\$(( (10#\$RUN_NUMBER - 1) % 64 ))
+          class_a=\$((10#\$WORKFLOW_A_START + slot / 4))
+          class_b_block_start=\$(( (slot % 4) * 64 ))
+          if (( slot < 0 || slot > 63 || class_a < 0 || class_a > 255 )); then
+            printf 'derived Class-A scope is outside 0..255: %s\n' "\$class_a" >&2
+            exit 1
+          fi
+          case "\$class_b_block_start" in
+            0|64|128|192) ;;
+            *) printf 'derived Class-B block is invalid: %s\n' "\$class_b_block_start" >&2; exit 1 ;;
+          esac
+          printf 'class_a=%s\n' "\$class_a" >> "\$GITHUB_OUTPUT"
+          printf 'class_b_block_start=%s\n' "\$class_b_block_start" >> "\$GITHUB_OUTPUT"
+
 EOF
         for wave in $(seq 0 15); do
             wave_offset=$((wave * 4))
             printf '  scan_wave_%s:\n' "$wave"
+            printf '    needs:\n      - select_scope\n'
             if (( wave > 0 )); then
-                printf '    needs: scan_wave_%s\n' "$((wave - 1))"
+                printf '      - scan_wave_%s\n' "$((wave - 1))"
             fi
             cat <<EOF
-    if: \${{ inputs.authorization_acknowledgement == 'I_HAVE_WRITTEN_AUTHORIZATION' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    if: \${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     name: Scan wave $wave
     runs-on: ubuntu-latest
     environment: internet-scan
@@ -78,19 +87,18 @@ EOF
       contents: read
     timeout-minutes: 360
     strategy:
-      max-parallel: \${{ fromJSON(inputs.matrix_max_parallel) }}
+      max-parallel: 2
       matrix:
-        classa: ['\${{ inputs.class_a }}']
         classb_offset: [$classb_offset_list]
     steps:
       - uses: actions/checkout@v7
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap
       - id: scan
         env:
-          BLOCK_START: \${{ inputs.class_b_block_start }}
+          BLOCK_START: \${{ needs.select_scope.outputs.class_b_block_start }}
           WAVE_OFFSET_BASE: $wave_offset
           CLASS_B_OFFSET: \${{ matrix.classb_offset }}
-          CLASS_A: \${{ matrix.classa }}
+          CLASS_A: \${{ needs.select_scope.outputs.class_a }}
           JOB_ID: \${{ github.job }}
           SCAN_WORKERS: 4
           NMAP_MAX_RATE: 25
@@ -122,8 +130,8 @@ EOF
           printf 'classb=%s\n' "\$classb" >> "\$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v7
         with:
-          name: scan-\${{ matrix.classa }}-\${{ steps.scan.outputs.classb }}-1
-          path: artifacts/scan-\${{ matrix.classa }}-\${{ steps.scan.outputs.classb }}-1.tar
+          name: scan-\${{ needs.select_scope.outputs.class_a }}-\${{ steps.scan.outputs.classb }}-1
+          path: artifacts/scan-\${{ needs.select_scope.outputs.class_a }}-\${{ steps.scan.outputs.classb }}-1.tar
           if-no-files-found: error
 
 EOF
@@ -131,6 +139,7 @@ EOF
         cat <<EOF
   aggregate:
     needs:
+      - select_scope
 EOF
         for wave in $(seq 0 15); do
             printf '      - scan_wave_%s\n' "$wave"
@@ -156,9 +165,9 @@ EOF
         run: >-
           ./bin/publish-result.sh
           --artifacts incoming-artifacts
-          --class-a-start \${{ inputs.class_a }}
-          --class-a-end \${{ inputs.class_a }}
-          --class-b-block-start \${{ inputs.class_b_block_start }}
+          --class-a-start \${{ needs.select_scope.outputs.class_a }}
+          --class-a-end \${{ needs.select_scope.outputs.class_a }}
+          --class-b-block-start \${{ needs.select_scope.outputs.class_b_block_start }}
           --count 1
           --run-id \${{ github.run_id }}
           --run-number \${{ github.run_number }}
