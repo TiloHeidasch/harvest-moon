@@ -2,28 +2,1010 @@ name: Scan Class A 240-255
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "30 2 * * *"
+    inputs:
+      authorization_acknowledgement:
+        description: 'Type the exact confirmation for this selected Class-A scope.'
+        required: true
+        type: string
+      class_a:
+        description: 'Select exactly one Class A owned by this workflow.'
+        required: true
+        type: choice
+        options:
+          - '240'
+          - '241'
+          - '242'
+          - '243'
+          - '244'
+          - '245'
+          - '246'
+          - '247'
+          - '248'
+          - '249'
+          - '250'
+          - '251'
+          - '252'
+          - '253'
+          - '254'
+          - '255'
+      class_b_block_start:
+        description: 'Select one contiguous 64-Class-B block for this run.'
+        required: true
+        type: choice
+        options:
+          - '0'
+          - '64'
+          - '128'
+          - '192'
+        default: '0'
+      matrix_max_parallel:
+        description: 'Maximum concurrent scan jobs (provider-approved choice).'
+        required: true
+        type: choice
+        options:
+          - '1'
+          - '2'
+        default: '1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: authorized-internet-scan
+  queue: max
+  cancel-in-progress: false
 
 jobs:
-  scan:
+  scan_wave_0:
+    if: ${{ inputs.authorization_acknowledgement == 'I_HAVE_WRITTEN_AUTHORIZATION' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    name: Scan wave 0
     runs-on: ubuntu-latest
+    environment: internet-scan
+    permissions:
+      contents: read
+    timeout-minutes: 360
     strategy:
+      max-parallel: ${{ fromJSON(inputs.matrix_max_parallel) }}
       matrix:
-        classa: [240,241,242,243,244,245,246,247,248,249,250,251,252,253,254,255]
-        classb: [0,64,128,192]
+        classa: ['${{ inputs.class_a }}']
+        classb_offset: [0,1,2,3]
     steps:
       - uses: actions/checkout@v7
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap
-      - run: ./scan-classb.sh ${{ matrix.classa }} ${{ matrix.classb }} 64
+      - id: scan
+        env:
+          BLOCK_START: ${{ inputs.class_b_block_start }}
+          WAVE_OFFSET_BASE: 0
+          CLASS_B_OFFSET: ${{ matrix.classb_offset }}
+          CLASS_A: ${{ matrix.classa }}
+          JOB_ID: ${{ github.job }}
+          SCAN_WORKERS: 4
+          NMAP_MAX_RATE: 25
+          NMAP_TIMEOUT_SECONDS: 120
+          SCAN_ATTEMPTS: 2
+          SCAN_RETRY_DELAY: 1
+          SCAN_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          case "$BLOCK_START" in
+            0|64|128|192) ;;
+            *) printf 'invalid BLOCK_START: %s\n' "$BLOCK_START" >&2; exit 1 ;;
+          esac
+          case "$WAVE_OFFSET_BASE" in
+            0|[1-9]|[1-5][0-9]|60) ;;
+            *) printf 'invalid WAVE_OFFSET_BASE: %s\n' "$WAVE_OFFSET_BASE" >&2; exit 1 ;;
+          esac
+          case "$CLASS_B_OFFSET" in
+            0|[1-9]) ;;
+            *) printf 'invalid CLASS_B_OFFSET: %s\n' "$CLASS_B_OFFSET" >&2; exit 1 ;;
+          esac
+          classb=$((10#$BLOCK_START + 10#$WAVE_OFFSET_BASE + 10#$CLASS_B_OFFSET))
+          if (( classb < 0 || classb > 255 )); then
+            printf 'computed classb out of range: %s\n' "$classb" >&2
+            exit 1
+          fi
+          export SCAN_JOB_ID="${JOB_ID}-${CLASS_A}-${classb}"
+          ./scan-classb.sh "$CLASS_A" "$classb" 1
+          printf 'classb=%s\n' "$classb" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v7
         with:
-          name: scan-${{ matrix.classa }}-${{ matrix.classb }}
-          path: results/
+          name: scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1
+          path: artifacts/scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1.tar
+          if-no-files-found: error
+
+  scan_wave_1:
+    needs: scan_wave_0
+    if: ${{ inputs.authorization_acknowledgement == 'I_HAVE_WRITTEN_AUTHORIZATION' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    name: Scan wave 1
+    runs-on: ubuntu-latest
+    environment: internet-scan
+    permissions:
+      contents: read
+    timeout-minutes: 360
+    strategy:
+      max-parallel: ${{ fromJSON(inputs.matrix_max_parallel) }}
+      matrix:
+        classa: ['${{ inputs.class_a }}']
+        classb_offset: [0,1,2,3]
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap
+      - id: scan
+        env:
+          BLOCK_START: ${{ inputs.class_b_block_start }}
+          WAVE_OFFSET_BASE: 4
+          CLASS_B_OFFSET: ${{ matrix.classb_offset }}
+          CLASS_A: ${{ matrix.classa }}
+          JOB_ID: ${{ github.job }}
+          SCAN_WORKERS: 4
+          NMAP_MAX_RATE: 25
+          NMAP_TIMEOUT_SECONDS: 120
+          SCAN_ATTEMPTS: 2
+          SCAN_RETRY_DELAY: 1
+          SCAN_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          case "$BLOCK_START" in
+            0|64|128|192) ;;
+            *) printf 'invalid BLOCK_START: %s\n' "$BLOCK_START" >&2; exit 1 ;;
+          esac
+          case "$WAVE_OFFSET_BASE" in
+            0|[1-9]|[1-5][0-9]|60) ;;
+            *) printf 'invalid WAVE_OFFSET_BASE: %s\n' "$WAVE_OFFSET_BASE" >&2; exit 1 ;;
+          esac
+          case "$CLASS_B_OFFSET" in
+            0|[1-9]) ;;
+            *) printf 'invalid CLASS_B_OFFSET: %s\n' "$CLASS_B_OFFSET" >&2; exit 1 ;;
+          esac
+          classb=$((10#$BLOCK_START + 10#$WAVE_OFFSET_BASE + 10#$CLASS_B_OFFSET))
+          if (( classb < 0 || classb > 255 )); then
+            printf 'computed classb out of range: %s\n' "$classb" >&2
+            exit 1
+          fi
+          export SCAN_JOB_ID="${JOB_ID}-${CLASS_A}-${classb}"
+          ./scan-classb.sh "$CLASS_A" "$classb" 1
+          printf 'classb=%s\n' "$classb" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1
+          path: artifacts/scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1.tar
+          if-no-files-found: error
+
+  scan_wave_2:
+    needs: scan_wave_1
+    if: ${{ inputs.authorization_acknowledgement == 'I_HAVE_WRITTEN_AUTHORIZATION' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    name: Scan wave 2
+    runs-on: ubuntu-latest
+    environment: internet-scan
+    permissions:
+      contents: read
+    timeout-minutes: 360
+    strategy:
+      max-parallel: ${{ fromJSON(inputs.matrix_max_parallel) }}
+      matrix:
+        classa: ['${{ inputs.class_a }}']
+        classb_offset: [0,1,2,3]
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap
+      - id: scan
+        env:
+          BLOCK_START: ${{ inputs.class_b_block_start }}
+          WAVE_OFFSET_BASE: 8
+          CLASS_B_OFFSET: ${{ matrix.classb_offset }}
+          CLASS_A: ${{ matrix.classa }}
+          JOB_ID: ${{ github.job }}
+          SCAN_WORKERS: 4
+          NMAP_MAX_RATE: 25
+          NMAP_TIMEOUT_SECONDS: 120
+          SCAN_ATTEMPTS: 2
+          SCAN_RETRY_DELAY: 1
+          SCAN_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          case "$BLOCK_START" in
+            0|64|128|192) ;;
+            *) printf 'invalid BLOCK_START: %s\n' "$BLOCK_START" >&2; exit 1 ;;
+          esac
+          case "$WAVE_OFFSET_BASE" in
+            0|[1-9]|[1-5][0-9]|60) ;;
+            *) printf 'invalid WAVE_OFFSET_BASE: %s\n' "$WAVE_OFFSET_BASE" >&2; exit 1 ;;
+          esac
+          case "$CLASS_B_OFFSET" in
+            0|[1-9]) ;;
+            *) printf 'invalid CLASS_B_OFFSET: %s\n' "$CLASS_B_OFFSET" >&2; exit 1 ;;
+          esac
+          classb=$((10#$BLOCK_START + 10#$WAVE_OFFSET_BASE + 10#$CLASS_B_OFFSET))
+          if (( classb < 0 || classb > 255 )); then
+            printf 'computed classb out of range: %s\n' "$classb" >&2
+            exit 1
+          fi
+          export SCAN_JOB_ID="${JOB_ID}-${CLASS_A}-${classb}"
+          ./scan-classb.sh "$CLASS_A" "$classb" 1
+          printf 'classb=%s\n' "$classb" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1
+          path: artifacts/scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1.tar
+          if-no-files-found: error
+
+  scan_wave_3:
+    needs: scan_wave_2
+    if: ${{ inputs.authorization_acknowledgement == 'I_HAVE_WRITTEN_AUTHORIZATION' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    name: Scan wave 3
+    runs-on: ubuntu-latest
+    environment: internet-scan
+    permissions:
+      contents: read
+    timeout-minutes: 360
+    strategy:
+      max-parallel: ${{ fromJSON(inputs.matrix_max_parallel) }}
+      matrix:
+        classa: ['${{ inputs.class_a }}']
+        classb_offset: [0,1,2,3]
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap
+      - id: scan
+        env:
+          BLOCK_START: ${{ inputs.class_b_block_start }}
+          WAVE_OFFSET_BASE: 12
+          CLASS_B_OFFSET: ${{ matrix.classb_offset }}
+          CLASS_A: ${{ matrix.classa }}
+          JOB_ID: ${{ github.job }}
+          SCAN_WORKERS: 4
+          NMAP_MAX_RATE: 25
+          NMAP_TIMEOUT_SECONDS: 120
+          SCAN_ATTEMPTS: 2
+          SCAN_RETRY_DELAY: 1
+          SCAN_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          case "$BLOCK_START" in
+            0|64|128|192) ;;
+            *) printf 'invalid BLOCK_START: %s\n' "$BLOCK_START" >&2; exit 1 ;;
+          esac
+          case "$WAVE_OFFSET_BASE" in
+            0|[1-9]|[1-5][0-9]|60) ;;
+            *) printf 'invalid WAVE_OFFSET_BASE: %s\n' "$WAVE_OFFSET_BASE" >&2; exit 1 ;;
+          esac
+          case "$CLASS_B_OFFSET" in
+            0|[1-9]) ;;
+            *) printf 'invalid CLASS_B_OFFSET: %s\n' "$CLASS_B_OFFSET" >&2; exit 1 ;;
+          esac
+          classb=$((10#$BLOCK_START + 10#$WAVE_OFFSET_BASE + 10#$CLASS_B_OFFSET))
+          if (( classb < 0 || classb > 255 )); then
+            printf 'computed classb out of range: %s\n' "$classb" >&2
+            exit 1
+          fi
+          export SCAN_JOB_ID="${JOB_ID}-${CLASS_A}-${classb}"
+          ./scan-classb.sh "$CLASS_A" "$classb" 1
+          printf 'classb=%s\n' "$classb" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1
+          path: artifacts/scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1.tar
+          if-no-files-found: error
+
+  scan_wave_4:
+    needs: scan_wave_3
+    if: ${{ inputs.authorization_acknowledgement == 'I_HAVE_WRITTEN_AUTHORIZATION' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    name: Scan wave 4
+    runs-on: ubuntu-latest
+    environment: internet-scan
+    permissions:
+      contents: read
+    timeout-minutes: 360
+    strategy:
+      max-parallel: ${{ fromJSON(inputs.matrix_max_parallel) }}
+      matrix:
+        classa: ['${{ inputs.class_a }}']
+        classb_offset: [0,1,2,3]
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap
+      - id: scan
+        env:
+          BLOCK_START: ${{ inputs.class_b_block_start }}
+          WAVE_OFFSET_BASE: 16
+          CLASS_B_OFFSET: ${{ matrix.classb_offset }}
+          CLASS_A: ${{ matrix.classa }}
+          JOB_ID: ${{ github.job }}
+          SCAN_WORKERS: 4
+          NMAP_MAX_RATE: 25
+          NMAP_TIMEOUT_SECONDS: 120
+          SCAN_ATTEMPTS: 2
+          SCAN_RETRY_DELAY: 1
+          SCAN_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          case "$BLOCK_START" in
+            0|64|128|192) ;;
+            *) printf 'invalid BLOCK_START: %s\n' "$BLOCK_START" >&2; exit 1 ;;
+          esac
+          case "$WAVE_OFFSET_BASE" in
+            0|[1-9]|[1-5][0-9]|60) ;;
+            *) printf 'invalid WAVE_OFFSET_BASE: %s\n' "$WAVE_OFFSET_BASE" >&2; exit 1 ;;
+          esac
+          case "$CLASS_B_OFFSET" in
+            0|[1-9]) ;;
+            *) printf 'invalid CLASS_B_OFFSET: %s\n' "$CLASS_B_OFFSET" >&2; exit 1 ;;
+          esac
+          classb=$((10#$BLOCK_START + 10#$WAVE_OFFSET_BASE + 10#$CLASS_B_OFFSET))
+          if (( classb < 0 || classb > 255 )); then
+            printf 'computed classb out of range: %s\n' "$classb" >&2
+            exit 1
+          fi
+          export SCAN_JOB_ID="${JOB_ID}-${CLASS_A}-${classb}"
+          ./scan-classb.sh "$CLASS_A" "$classb" 1
+          printf 'classb=%s\n' "$classb" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1
+          path: artifacts/scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1.tar
+          if-no-files-found: error
+
+  scan_wave_5:
+    needs: scan_wave_4
+    if: ${{ inputs.authorization_acknowledgement == 'I_HAVE_WRITTEN_AUTHORIZATION' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    name: Scan wave 5
+    runs-on: ubuntu-latest
+    environment: internet-scan
+    permissions:
+      contents: read
+    timeout-minutes: 360
+    strategy:
+      max-parallel: ${{ fromJSON(inputs.matrix_max_parallel) }}
+      matrix:
+        classa: ['${{ inputs.class_a }}']
+        classb_offset: [0,1,2,3]
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap
+      - id: scan
+        env:
+          BLOCK_START: ${{ inputs.class_b_block_start }}
+          WAVE_OFFSET_BASE: 20
+          CLASS_B_OFFSET: ${{ matrix.classb_offset }}
+          CLASS_A: ${{ matrix.classa }}
+          JOB_ID: ${{ github.job }}
+          SCAN_WORKERS: 4
+          NMAP_MAX_RATE: 25
+          NMAP_TIMEOUT_SECONDS: 120
+          SCAN_ATTEMPTS: 2
+          SCAN_RETRY_DELAY: 1
+          SCAN_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          case "$BLOCK_START" in
+            0|64|128|192) ;;
+            *) printf 'invalid BLOCK_START: %s\n' "$BLOCK_START" >&2; exit 1 ;;
+          esac
+          case "$WAVE_OFFSET_BASE" in
+            0|[1-9]|[1-5][0-9]|60) ;;
+            *) printf 'invalid WAVE_OFFSET_BASE: %s\n' "$WAVE_OFFSET_BASE" >&2; exit 1 ;;
+          esac
+          case "$CLASS_B_OFFSET" in
+            0|[1-9]) ;;
+            *) printf 'invalid CLASS_B_OFFSET: %s\n' "$CLASS_B_OFFSET" >&2; exit 1 ;;
+          esac
+          classb=$((10#$BLOCK_START + 10#$WAVE_OFFSET_BASE + 10#$CLASS_B_OFFSET))
+          if (( classb < 0 || classb > 255 )); then
+            printf 'computed classb out of range: %s\n' "$classb" >&2
+            exit 1
+          fi
+          export SCAN_JOB_ID="${JOB_ID}-${CLASS_A}-${classb}"
+          ./scan-classb.sh "$CLASS_A" "$classb" 1
+          printf 'classb=%s\n' "$classb" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1
+          path: artifacts/scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1.tar
+          if-no-files-found: error
+
+  scan_wave_6:
+    needs: scan_wave_5
+    if: ${{ inputs.authorization_acknowledgement == 'I_HAVE_WRITTEN_AUTHORIZATION' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    name: Scan wave 6
+    runs-on: ubuntu-latest
+    environment: internet-scan
+    permissions:
+      contents: read
+    timeout-minutes: 360
+    strategy:
+      max-parallel: ${{ fromJSON(inputs.matrix_max_parallel) }}
+      matrix:
+        classa: ['${{ inputs.class_a }}']
+        classb_offset: [0,1,2,3]
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap
+      - id: scan
+        env:
+          BLOCK_START: ${{ inputs.class_b_block_start }}
+          WAVE_OFFSET_BASE: 24
+          CLASS_B_OFFSET: ${{ matrix.classb_offset }}
+          CLASS_A: ${{ matrix.classa }}
+          JOB_ID: ${{ github.job }}
+          SCAN_WORKERS: 4
+          NMAP_MAX_RATE: 25
+          NMAP_TIMEOUT_SECONDS: 120
+          SCAN_ATTEMPTS: 2
+          SCAN_RETRY_DELAY: 1
+          SCAN_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          case "$BLOCK_START" in
+            0|64|128|192) ;;
+            *) printf 'invalid BLOCK_START: %s\n' "$BLOCK_START" >&2; exit 1 ;;
+          esac
+          case "$WAVE_OFFSET_BASE" in
+            0|[1-9]|[1-5][0-9]|60) ;;
+            *) printf 'invalid WAVE_OFFSET_BASE: %s\n' "$WAVE_OFFSET_BASE" >&2; exit 1 ;;
+          esac
+          case "$CLASS_B_OFFSET" in
+            0|[1-9]) ;;
+            *) printf 'invalid CLASS_B_OFFSET: %s\n' "$CLASS_B_OFFSET" >&2; exit 1 ;;
+          esac
+          classb=$((10#$BLOCK_START + 10#$WAVE_OFFSET_BASE + 10#$CLASS_B_OFFSET))
+          if (( classb < 0 || classb > 255 )); then
+            printf 'computed classb out of range: %s\n' "$classb" >&2
+            exit 1
+          fi
+          export SCAN_JOB_ID="${JOB_ID}-${CLASS_A}-${classb}"
+          ./scan-classb.sh "$CLASS_A" "$classb" 1
+          printf 'classb=%s\n' "$classb" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1
+          path: artifacts/scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1.tar
+          if-no-files-found: error
+
+  scan_wave_7:
+    needs: scan_wave_6
+    if: ${{ inputs.authorization_acknowledgement == 'I_HAVE_WRITTEN_AUTHORIZATION' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    name: Scan wave 7
+    runs-on: ubuntu-latest
+    environment: internet-scan
+    permissions:
+      contents: read
+    timeout-minutes: 360
+    strategy:
+      max-parallel: ${{ fromJSON(inputs.matrix_max_parallel) }}
+      matrix:
+        classa: ['${{ inputs.class_a }}']
+        classb_offset: [0,1,2,3]
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap
+      - id: scan
+        env:
+          BLOCK_START: ${{ inputs.class_b_block_start }}
+          WAVE_OFFSET_BASE: 28
+          CLASS_B_OFFSET: ${{ matrix.classb_offset }}
+          CLASS_A: ${{ matrix.classa }}
+          JOB_ID: ${{ github.job }}
+          SCAN_WORKERS: 4
+          NMAP_MAX_RATE: 25
+          NMAP_TIMEOUT_SECONDS: 120
+          SCAN_ATTEMPTS: 2
+          SCAN_RETRY_DELAY: 1
+          SCAN_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          case "$BLOCK_START" in
+            0|64|128|192) ;;
+            *) printf 'invalid BLOCK_START: %s\n' "$BLOCK_START" >&2; exit 1 ;;
+          esac
+          case "$WAVE_OFFSET_BASE" in
+            0|[1-9]|[1-5][0-9]|60) ;;
+            *) printf 'invalid WAVE_OFFSET_BASE: %s\n' "$WAVE_OFFSET_BASE" >&2; exit 1 ;;
+          esac
+          case "$CLASS_B_OFFSET" in
+            0|[1-9]) ;;
+            *) printf 'invalid CLASS_B_OFFSET: %s\n' "$CLASS_B_OFFSET" >&2; exit 1 ;;
+          esac
+          classb=$((10#$BLOCK_START + 10#$WAVE_OFFSET_BASE + 10#$CLASS_B_OFFSET))
+          if (( classb < 0 || classb > 255 )); then
+            printf 'computed classb out of range: %s\n' "$classb" >&2
+            exit 1
+          fi
+          export SCAN_JOB_ID="${JOB_ID}-${CLASS_A}-${classb}"
+          ./scan-classb.sh "$CLASS_A" "$classb" 1
+          printf 'classb=%s\n' "$classb" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1
+          path: artifacts/scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1.tar
+          if-no-files-found: error
+
+  scan_wave_8:
+    needs: scan_wave_7
+    if: ${{ inputs.authorization_acknowledgement == 'I_HAVE_WRITTEN_AUTHORIZATION' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    name: Scan wave 8
+    runs-on: ubuntu-latest
+    environment: internet-scan
+    permissions:
+      contents: read
+    timeout-minutes: 360
+    strategy:
+      max-parallel: ${{ fromJSON(inputs.matrix_max_parallel) }}
+      matrix:
+        classa: ['${{ inputs.class_a }}']
+        classb_offset: [0,1,2,3]
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap
+      - id: scan
+        env:
+          BLOCK_START: ${{ inputs.class_b_block_start }}
+          WAVE_OFFSET_BASE: 32
+          CLASS_B_OFFSET: ${{ matrix.classb_offset }}
+          CLASS_A: ${{ matrix.classa }}
+          JOB_ID: ${{ github.job }}
+          SCAN_WORKERS: 4
+          NMAP_MAX_RATE: 25
+          NMAP_TIMEOUT_SECONDS: 120
+          SCAN_ATTEMPTS: 2
+          SCAN_RETRY_DELAY: 1
+          SCAN_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          case "$BLOCK_START" in
+            0|64|128|192) ;;
+            *) printf 'invalid BLOCK_START: %s\n' "$BLOCK_START" >&2; exit 1 ;;
+          esac
+          case "$WAVE_OFFSET_BASE" in
+            0|[1-9]|[1-5][0-9]|60) ;;
+            *) printf 'invalid WAVE_OFFSET_BASE: %s\n' "$WAVE_OFFSET_BASE" >&2; exit 1 ;;
+          esac
+          case "$CLASS_B_OFFSET" in
+            0|[1-9]) ;;
+            *) printf 'invalid CLASS_B_OFFSET: %s\n' "$CLASS_B_OFFSET" >&2; exit 1 ;;
+          esac
+          classb=$((10#$BLOCK_START + 10#$WAVE_OFFSET_BASE + 10#$CLASS_B_OFFSET))
+          if (( classb < 0 || classb > 255 )); then
+            printf 'computed classb out of range: %s\n' "$classb" >&2
+            exit 1
+          fi
+          export SCAN_JOB_ID="${JOB_ID}-${CLASS_A}-${classb}"
+          ./scan-classb.sh "$CLASS_A" "$classb" 1
+          printf 'classb=%s\n' "$classb" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1
+          path: artifacts/scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1.tar
+          if-no-files-found: error
+
+  scan_wave_9:
+    needs: scan_wave_8
+    if: ${{ inputs.authorization_acknowledgement == 'I_HAVE_WRITTEN_AUTHORIZATION' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    name: Scan wave 9
+    runs-on: ubuntu-latest
+    environment: internet-scan
+    permissions:
+      contents: read
+    timeout-minutes: 360
+    strategy:
+      max-parallel: ${{ fromJSON(inputs.matrix_max_parallel) }}
+      matrix:
+        classa: ['${{ inputs.class_a }}']
+        classb_offset: [0,1,2,3]
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap
+      - id: scan
+        env:
+          BLOCK_START: ${{ inputs.class_b_block_start }}
+          WAVE_OFFSET_BASE: 36
+          CLASS_B_OFFSET: ${{ matrix.classb_offset }}
+          CLASS_A: ${{ matrix.classa }}
+          JOB_ID: ${{ github.job }}
+          SCAN_WORKERS: 4
+          NMAP_MAX_RATE: 25
+          NMAP_TIMEOUT_SECONDS: 120
+          SCAN_ATTEMPTS: 2
+          SCAN_RETRY_DELAY: 1
+          SCAN_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          case "$BLOCK_START" in
+            0|64|128|192) ;;
+            *) printf 'invalid BLOCK_START: %s\n' "$BLOCK_START" >&2; exit 1 ;;
+          esac
+          case "$WAVE_OFFSET_BASE" in
+            0|[1-9]|[1-5][0-9]|60) ;;
+            *) printf 'invalid WAVE_OFFSET_BASE: %s\n' "$WAVE_OFFSET_BASE" >&2; exit 1 ;;
+          esac
+          case "$CLASS_B_OFFSET" in
+            0|[1-9]) ;;
+            *) printf 'invalid CLASS_B_OFFSET: %s\n' "$CLASS_B_OFFSET" >&2; exit 1 ;;
+          esac
+          classb=$((10#$BLOCK_START + 10#$WAVE_OFFSET_BASE + 10#$CLASS_B_OFFSET))
+          if (( classb < 0 || classb > 255 )); then
+            printf 'computed classb out of range: %s\n' "$classb" >&2
+            exit 1
+          fi
+          export SCAN_JOB_ID="${JOB_ID}-${CLASS_A}-${classb}"
+          ./scan-classb.sh "$CLASS_A" "$classb" 1
+          printf 'classb=%s\n' "$classb" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1
+          path: artifacts/scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1.tar
+          if-no-files-found: error
+
+  scan_wave_10:
+    needs: scan_wave_9
+    if: ${{ inputs.authorization_acknowledgement == 'I_HAVE_WRITTEN_AUTHORIZATION' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    name: Scan wave 10
+    runs-on: ubuntu-latest
+    environment: internet-scan
+    permissions:
+      contents: read
+    timeout-minutes: 360
+    strategy:
+      max-parallel: ${{ fromJSON(inputs.matrix_max_parallel) }}
+      matrix:
+        classa: ['${{ inputs.class_a }}']
+        classb_offset: [0,1,2,3]
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap
+      - id: scan
+        env:
+          BLOCK_START: ${{ inputs.class_b_block_start }}
+          WAVE_OFFSET_BASE: 40
+          CLASS_B_OFFSET: ${{ matrix.classb_offset }}
+          CLASS_A: ${{ matrix.classa }}
+          JOB_ID: ${{ github.job }}
+          SCAN_WORKERS: 4
+          NMAP_MAX_RATE: 25
+          NMAP_TIMEOUT_SECONDS: 120
+          SCAN_ATTEMPTS: 2
+          SCAN_RETRY_DELAY: 1
+          SCAN_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          case "$BLOCK_START" in
+            0|64|128|192) ;;
+            *) printf 'invalid BLOCK_START: %s\n' "$BLOCK_START" >&2; exit 1 ;;
+          esac
+          case "$WAVE_OFFSET_BASE" in
+            0|[1-9]|[1-5][0-9]|60) ;;
+            *) printf 'invalid WAVE_OFFSET_BASE: %s\n' "$WAVE_OFFSET_BASE" >&2; exit 1 ;;
+          esac
+          case "$CLASS_B_OFFSET" in
+            0|[1-9]) ;;
+            *) printf 'invalid CLASS_B_OFFSET: %s\n' "$CLASS_B_OFFSET" >&2; exit 1 ;;
+          esac
+          classb=$((10#$BLOCK_START + 10#$WAVE_OFFSET_BASE + 10#$CLASS_B_OFFSET))
+          if (( classb < 0 || classb > 255 )); then
+            printf 'computed classb out of range: %s\n' "$classb" >&2
+            exit 1
+          fi
+          export SCAN_JOB_ID="${JOB_ID}-${CLASS_A}-${classb}"
+          ./scan-classb.sh "$CLASS_A" "$classb" 1
+          printf 'classb=%s\n' "$classb" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1
+          path: artifacts/scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1.tar
+          if-no-files-found: error
+
+  scan_wave_11:
+    needs: scan_wave_10
+    if: ${{ inputs.authorization_acknowledgement == 'I_HAVE_WRITTEN_AUTHORIZATION' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    name: Scan wave 11
+    runs-on: ubuntu-latest
+    environment: internet-scan
+    permissions:
+      contents: read
+    timeout-minutes: 360
+    strategy:
+      max-parallel: ${{ fromJSON(inputs.matrix_max_parallel) }}
+      matrix:
+        classa: ['${{ inputs.class_a }}']
+        classb_offset: [0,1,2,3]
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap
+      - id: scan
+        env:
+          BLOCK_START: ${{ inputs.class_b_block_start }}
+          WAVE_OFFSET_BASE: 44
+          CLASS_B_OFFSET: ${{ matrix.classb_offset }}
+          CLASS_A: ${{ matrix.classa }}
+          JOB_ID: ${{ github.job }}
+          SCAN_WORKERS: 4
+          NMAP_MAX_RATE: 25
+          NMAP_TIMEOUT_SECONDS: 120
+          SCAN_ATTEMPTS: 2
+          SCAN_RETRY_DELAY: 1
+          SCAN_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          case "$BLOCK_START" in
+            0|64|128|192) ;;
+            *) printf 'invalid BLOCK_START: %s\n' "$BLOCK_START" >&2; exit 1 ;;
+          esac
+          case "$WAVE_OFFSET_BASE" in
+            0|[1-9]|[1-5][0-9]|60) ;;
+            *) printf 'invalid WAVE_OFFSET_BASE: %s\n' "$WAVE_OFFSET_BASE" >&2; exit 1 ;;
+          esac
+          case "$CLASS_B_OFFSET" in
+            0|[1-9]) ;;
+            *) printf 'invalid CLASS_B_OFFSET: %s\n' "$CLASS_B_OFFSET" >&2; exit 1 ;;
+          esac
+          classb=$((10#$BLOCK_START + 10#$WAVE_OFFSET_BASE + 10#$CLASS_B_OFFSET))
+          if (( classb < 0 || classb > 255 )); then
+            printf 'computed classb out of range: %s\n' "$classb" >&2
+            exit 1
+          fi
+          export SCAN_JOB_ID="${JOB_ID}-${CLASS_A}-${classb}"
+          ./scan-classb.sh "$CLASS_A" "$classb" 1
+          printf 'classb=%s\n' "$classb" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1
+          path: artifacts/scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1.tar
+          if-no-files-found: error
+
+  scan_wave_12:
+    needs: scan_wave_11
+    if: ${{ inputs.authorization_acknowledgement == 'I_HAVE_WRITTEN_AUTHORIZATION' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    name: Scan wave 12
+    runs-on: ubuntu-latest
+    environment: internet-scan
+    permissions:
+      contents: read
+    timeout-minutes: 360
+    strategy:
+      max-parallel: ${{ fromJSON(inputs.matrix_max_parallel) }}
+      matrix:
+        classa: ['${{ inputs.class_a }}']
+        classb_offset: [0,1,2,3]
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap
+      - id: scan
+        env:
+          BLOCK_START: ${{ inputs.class_b_block_start }}
+          WAVE_OFFSET_BASE: 48
+          CLASS_B_OFFSET: ${{ matrix.classb_offset }}
+          CLASS_A: ${{ matrix.classa }}
+          JOB_ID: ${{ github.job }}
+          SCAN_WORKERS: 4
+          NMAP_MAX_RATE: 25
+          NMAP_TIMEOUT_SECONDS: 120
+          SCAN_ATTEMPTS: 2
+          SCAN_RETRY_DELAY: 1
+          SCAN_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          case "$BLOCK_START" in
+            0|64|128|192) ;;
+            *) printf 'invalid BLOCK_START: %s\n' "$BLOCK_START" >&2; exit 1 ;;
+          esac
+          case "$WAVE_OFFSET_BASE" in
+            0|[1-9]|[1-5][0-9]|60) ;;
+            *) printf 'invalid WAVE_OFFSET_BASE: %s\n' "$WAVE_OFFSET_BASE" >&2; exit 1 ;;
+          esac
+          case "$CLASS_B_OFFSET" in
+            0|[1-9]) ;;
+            *) printf 'invalid CLASS_B_OFFSET: %s\n' "$CLASS_B_OFFSET" >&2; exit 1 ;;
+          esac
+          classb=$((10#$BLOCK_START + 10#$WAVE_OFFSET_BASE + 10#$CLASS_B_OFFSET))
+          if (( classb < 0 || classb > 255 )); then
+            printf 'computed classb out of range: %s\n' "$classb" >&2
+            exit 1
+          fi
+          export SCAN_JOB_ID="${JOB_ID}-${CLASS_A}-${classb}"
+          ./scan-classb.sh "$CLASS_A" "$classb" 1
+          printf 'classb=%s\n' "$classb" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1
+          path: artifacts/scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1.tar
+          if-no-files-found: error
+
+  scan_wave_13:
+    needs: scan_wave_12
+    if: ${{ inputs.authorization_acknowledgement == 'I_HAVE_WRITTEN_AUTHORIZATION' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    name: Scan wave 13
+    runs-on: ubuntu-latest
+    environment: internet-scan
+    permissions:
+      contents: read
+    timeout-minutes: 360
+    strategy:
+      max-parallel: ${{ fromJSON(inputs.matrix_max_parallel) }}
+      matrix:
+        classa: ['${{ inputs.class_a }}']
+        classb_offset: [0,1,2,3]
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap
+      - id: scan
+        env:
+          BLOCK_START: ${{ inputs.class_b_block_start }}
+          WAVE_OFFSET_BASE: 52
+          CLASS_B_OFFSET: ${{ matrix.classb_offset }}
+          CLASS_A: ${{ matrix.classa }}
+          JOB_ID: ${{ github.job }}
+          SCAN_WORKERS: 4
+          NMAP_MAX_RATE: 25
+          NMAP_TIMEOUT_SECONDS: 120
+          SCAN_ATTEMPTS: 2
+          SCAN_RETRY_DELAY: 1
+          SCAN_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          case "$BLOCK_START" in
+            0|64|128|192) ;;
+            *) printf 'invalid BLOCK_START: %s\n' "$BLOCK_START" >&2; exit 1 ;;
+          esac
+          case "$WAVE_OFFSET_BASE" in
+            0|[1-9]|[1-5][0-9]|60) ;;
+            *) printf 'invalid WAVE_OFFSET_BASE: %s\n' "$WAVE_OFFSET_BASE" >&2; exit 1 ;;
+          esac
+          case "$CLASS_B_OFFSET" in
+            0|[1-9]) ;;
+            *) printf 'invalid CLASS_B_OFFSET: %s\n' "$CLASS_B_OFFSET" >&2; exit 1 ;;
+          esac
+          classb=$((10#$BLOCK_START + 10#$WAVE_OFFSET_BASE + 10#$CLASS_B_OFFSET))
+          if (( classb < 0 || classb > 255 )); then
+            printf 'computed classb out of range: %s\n' "$classb" >&2
+            exit 1
+          fi
+          export SCAN_JOB_ID="${JOB_ID}-${CLASS_A}-${classb}"
+          ./scan-classb.sh "$CLASS_A" "$classb" 1
+          printf 'classb=%s\n' "$classb" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1
+          path: artifacts/scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1.tar
+          if-no-files-found: error
+
+  scan_wave_14:
+    needs: scan_wave_13
+    if: ${{ inputs.authorization_acknowledgement == 'I_HAVE_WRITTEN_AUTHORIZATION' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    name: Scan wave 14
+    runs-on: ubuntu-latest
+    environment: internet-scan
+    permissions:
+      contents: read
+    timeout-minutes: 360
+    strategy:
+      max-parallel: ${{ fromJSON(inputs.matrix_max_parallel) }}
+      matrix:
+        classa: ['${{ inputs.class_a }}']
+        classb_offset: [0,1,2,3]
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap
+      - id: scan
+        env:
+          BLOCK_START: ${{ inputs.class_b_block_start }}
+          WAVE_OFFSET_BASE: 56
+          CLASS_B_OFFSET: ${{ matrix.classb_offset }}
+          CLASS_A: ${{ matrix.classa }}
+          JOB_ID: ${{ github.job }}
+          SCAN_WORKERS: 4
+          NMAP_MAX_RATE: 25
+          NMAP_TIMEOUT_SECONDS: 120
+          SCAN_ATTEMPTS: 2
+          SCAN_RETRY_DELAY: 1
+          SCAN_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          case "$BLOCK_START" in
+            0|64|128|192) ;;
+            *) printf 'invalid BLOCK_START: %s\n' "$BLOCK_START" >&2; exit 1 ;;
+          esac
+          case "$WAVE_OFFSET_BASE" in
+            0|[1-9]|[1-5][0-9]|60) ;;
+            *) printf 'invalid WAVE_OFFSET_BASE: %s\n' "$WAVE_OFFSET_BASE" >&2; exit 1 ;;
+          esac
+          case "$CLASS_B_OFFSET" in
+            0|[1-9]) ;;
+            *) printf 'invalid CLASS_B_OFFSET: %s\n' "$CLASS_B_OFFSET" >&2; exit 1 ;;
+          esac
+          classb=$((10#$BLOCK_START + 10#$WAVE_OFFSET_BASE + 10#$CLASS_B_OFFSET))
+          if (( classb < 0 || classb > 255 )); then
+            printf 'computed classb out of range: %s\n' "$classb" >&2
+            exit 1
+          fi
+          export SCAN_JOB_ID="${JOB_ID}-${CLASS_A}-${classb}"
+          ./scan-classb.sh "$CLASS_A" "$classb" 1
+          printf 'classb=%s\n' "$classb" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1
+          path: artifacts/scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1.tar
+          if-no-files-found: error
+
+  scan_wave_15:
+    needs: scan_wave_14
+    if: ${{ inputs.authorization_acknowledgement == 'I_HAVE_WRITTEN_AUTHORIZATION' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    name: Scan wave 15
+    runs-on: ubuntu-latest
+    environment: internet-scan
+    permissions:
+      contents: read
+    timeout-minutes: 360
+    strategy:
+      max-parallel: ${{ fromJSON(inputs.matrix_max_parallel) }}
+      matrix:
+        classa: ['${{ inputs.class_a }}']
+        classb_offset: [0,1,2,3]
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap
+      - id: scan
+        env:
+          BLOCK_START: ${{ inputs.class_b_block_start }}
+          WAVE_OFFSET_BASE: 60
+          CLASS_B_OFFSET: ${{ matrix.classb_offset }}
+          CLASS_A: ${{ matrix.classa }}
+          JOB_ID: ${{ github.job }}
+          SCAN_WORKERS: 4
+          NMAP_MAX_RATE: 25
+          NMAP_TIMEOUT_SECONDS: 120
+          SCAN_ATTEMPTS: 2
+          SCAN_RETRY_DELAY: 1
+          SCAN_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          case "$BLOCK_START" in
+            0|64|128|192) ;;
+            *) printf 'invalid BLOCK_START: %s\n' "$BLOCK_START" >&2; exit 1 ;;
+          esac
+          case "$WAVE_OFFSET_BASE" in
+            0|[1-9]|[1-5][0-9]|60) ;;
+            *) printf 'invalid WAVE_OFFSET_BASE: %s\n' "$WAVE_OFFSET_BASE" >&2; exit 1 ;;
+          esac
+          case "$CLASS_B_OFFSET" in
+            0|[1-9]) ;;
+            *) printf 'invalid CLASS_B_OFFSET: %s\n' "$CLASS_B_OFFSET" >&2; exit 1 ;;
+          esac
+          classb=$((10#$BLOCK_START + 10#$WAVE_OFFSET_BASE + 10#$CLASS_B_OFFSET))
+          if (( classb < 0 || classb > 255 )); then
+            printf 'computed classb out of range: %s\n' "$classb" >&2
+            exit 1
+          fi
+          export SCAN_JOB_ID="${JOB_ID}-${CLASS_A}-${classb}"
+          ./scan-classb.sh "$CLASS_A" "$classb" 1
+          printf 'classb=%s\n' "$classb" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1
+          path: artifacts/scan-${{ matrix.classa }}-${{ steps.scan.outputs.classb }}-1.tar
+          if-no-files-found: error
 
   aggregate:
-    needs: scan
+    needs:
+      - scan_wave_0
+      - scan_wave_1
+      - scan_wave_2
+      - scan_wave_3
+      - scan_wave_4
+      - scan_wave_5
+      - scan_wave_6
+      - scan_wave_7
+      - scan_wave_8
+      - scan_wave_9
+      - scan_wave_10
+      - scan_wave_11
+      - scan_wave_12
+      - scan_wave_13
+      - scan_wave_14
+      - scan_wave_15
     runs-on: ubuntu-latest
+    concurrency:
+      group: result-publisher
+      queue: max
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
@@ -31,65 +1013,20 @@ jobs:
       - uses: actions/download-artifact@v7
         with:
           pattern: scan-*
-          merge-multiple: true
-          path: downloaded/
-      - name: stage render tool
-        run: |
-          mkdir -p /tmp/render-tool
-          cp tools/csv2bin.py /tmp/render-tool/
-      - name: commit scan result to result branch
+          merge-multiple: false
+          path: incoming-artifacts/
+      - name: publish validated result snapshot
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git config user.email "actions@github.com"
-          git config user.name "github-actions"
-          for i in $(seq 1 20); do
-            git fetch origin result || true
-            git rebase --abort 2>/dev/null || true
-            git merge --abort 2>/dev/null || true
-            mv downloaded /tmp/downloaded-scans
-            if git rev-parse --verify origin/result >/dev/null 2>&1; then
-              git checkout -B result origin/result
-              git reset --hard origin/result
-            else
-              git checkout -B result
-            fi
-            rm -rf downloaded
-            mv /tmp/downloaded-scans downloaded
-            mkdir -p results
-            for ca in 240 241 242 243 244 245 246 247 248 249 250 251 252 253 254 255 ; do
-              find downloaded -maxdepth 1 -name "${ca}.*.txt" -exec cat {} + | sort -t. -k2,2n -k3,3n > "results/${ca}.txt"
-            done
-            git add results/*.txt
-            git commit -m "aggregate class A 240-255" || echo "nothing new"
-            git push origin "HEAD:refs/heads/result" && break
-            sleep 3
-          done
-      - uses: actions/upload-artifact@v7
-        with:
-          name: classa-15
-          path: results/*.txt
-      - name: render bin + manifest
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git config user.email "actions@github.com"
-          git config user.name "github-actions"
-          for i in $(seq 1 20); do
-            git fetch origin result || true
-            git rebase --abort 2>/dev/null || true
-            git merge --abort 2>/dev/null || true
-            rm -rf results
-            if git rev-parse --verify origin/result >/dev/null 2>&1; then
-              git checkout -B result origin/result
-              git reset --hard origin/result
-              git clean -fd
-            else
-              git checkout -B result
-            fi
-            python3 /tmp/render-tool/csv2bin.py ./results --out .
-            git add '*.bin' manifest.json
-            git commit -m "render bin + manifest" || echo "nothing new"
-            git push origin "HEAD:refs/heads/result" && break
-            sleep 3
-          done
+        run: >-
+          ./bin/publish-result.sh
+          --artifacts incoming-artifacts
+          --class-a-start ${{ inputs.class_a }}
+          --class-a-end ${{ inputs.class_a }}
+          --class-b-block-start ${{ inputs.class_b_block_start }}
+          --count 1
+          --run-id ${{ github.run_id }}
+          --run-number ${{ github.run_number }}
+          --run-attempt ${{ github.run_attempt }}
+          --policy config/exclusions.json
+          --retries 5

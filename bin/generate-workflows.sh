@@ -1,51 +1,146 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
-outdir=".github/workflows"
+# WORKFLOW_OUTPUT_DIR is intentionally useful to drift tests only.  The
+# production default remains the checked-in workflow directory.
+outdir="${WORKFLOW_OUTPUT_DIR:-.github/workflows}"
 mkdir -p "$outdir"
 
-classb_list=$(seq -s, 0 64 192)
-classb_list="${classb_list%,}"
+classb_offset_list=$(seq -s, 0 1 3)
+classb_offset_list="${classb_offset_list%,}"
 
 for g in $(seq 0 15); do
     a_start=$((g * 16))
     a_end=$((g * 16 + 15))
-    classa_list=$(seq -s, "$a_start" 1 "$a_end")
-    classa_list="${classa_list%,}"
 
-    # stagger by 30 min, starting 21:00 UTC (= 22:00 CET) for g=0,
-    # finishing 05:00 UTC (= 06:00 CET) for g=15
-    start_min=$(( (19 * 60) + g * 30 ))
-    cron_min=$(( start_min % 60 ))
-    cron_hr=$(( (start_min / 60) % 24 ))
-
-    cat > "$outdir/$g.yml" <<EOF
+    {
+        cat <<EOF
 name: Scan Class A $a_start-$a_end
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "$cron_min $cron_hr * * *"
+    inputs:
+      authorization_acknowledgement:
+        description: 'Type the exact confirmation for this selected Class-A scope.'
+        required: true
+        type: string
+      class_a:
+        description: 'Select exactly one Class A owned by this workflow.'
+        required: true
+        type: choice
+        options:
+EOF
+        for class_a in $(seq "$a_start" 1 "$a_end"); do
+            printf "          - '%s'\n" "$class_a"
+        done
+        cat <<EOF
+      class_b_block_start:
+        description: 'Select one contiguous 64-Class-B block for this run.'
+        required: true
+        type: choice
+        options:
+          - '0'
+          - '64'
+          - '128'
+          - '192'
+        default: '0'
+      matrix_max_parallel:
+        description: 'Maximum concurrent scan jobs (provider-approved choice).'
+        required: true
+        type: choice
+        options:
+          - '1'
+          - '2'
+        default: '1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: authorized-internet-scan
+  queue: max
+  cancel-in-progress: false
 
 jobs:
-  scan:
+EOF
+        for wave in $(seq 0 15); do
+            wave_offset=$((wave * 4))
+            printf '  scan_wave_%s:\n' "$wave"
+            if (( wave > 0 )); then
+                printf '    needs: scan_wave_%s\n' "$((wave - 1))"
+            fi
+            cat <<EOF
+    if: \${{ inputs.authorization_acknowledgement == 'I_HAVE_WRITTEN_AUTHORIZATION' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    name: Scan wave $wave
     runs-on: ubuntu-latest
+    environment: internet-scan
+    permissions:
+      contents: read
+    timeout-minutes: 360
     strategy:
+      max-parallel: \${{ fromJSON(inputs.matrix_max_parallel) }}
       matrix:
-        classa: [$classa_list]
-        classb: [$classb_list]
+        classa: ['\${{ inputs.class_a }}']
+        classb_offset: [$classb_offset_list]
     steps:
       - uses: actions/checkout@v7
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq nmap
-      - run: ./scan-classb.sh \${{ matrix.classa }} \${{ matrix.classb }} 64
+      - id: scan
+        env:
+          BLOCK_START: \${{ inputs.class_b_block_start }}
+          WAVE_OFFSET_BASE: $wave_offset
+          CLASS_B_OFFSET: \${{ matrix.classb_offset }}
+          CLASS_A: \${{ matrix.classa }}
+          JOB_ID: \${{ github.job }}
+          SCAN_WORKERS: 4
+          NMAP_MAX_RATE: 25
+          NMAP_TIMEOUT_SECONDS: 120
+          SCAN_ATTEMPTS: 2
+          SCAN_RETRY_DELAY: 1
+          SCAN_RUN_ID: \${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          case "\$BLOCK_START" in
+            0|64|128|192) ;;
+            *) printf 'invalid BLOCK_START: %s\n' "\$BLOCK_START" >&2; exit 1 ;;
+          esac
+          case "\$WAVE_OFFSET_BASE" in
+            0|[1-9]|[1-5][0-9]|60) ;;
+            *) printf 'invalid WAVE_OFFSET_BASE: %s\n' "\$WAVE_OFFSET_BASE" >&2; exit 1 ;;
+          esac
+          case "\$CLASS_B_OFFSET" in
+            0|[1-9]) ;;
+            *) printf 'invalid CLASS_B_OFFSET: %s\n' "\$CLASS_B_OFFSET" >&2; exit 1 ;;
+          esac
+          classb=\$((10#\$BLOCK_START + 10#\$WAVE_OFFSET_BASE + 10#\$CLASS_B_OFFSET))
+          if (( classb < 0 || classb > 255 )); then
+            printf 'computed classb out of range: %s\n' "\$classb" >&2
+            exit 1
+          fi
+          export SCAN_JOB_ID="\${JOB_ID}-\${CLASS_A}-\${classb}"
+          ./scan-classb.sh "\$CLASS_A" "\$classb" 1
+          printf 'classb=%s\n' "\$classb" >> "\$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v7
         with:
-          name: scan-\${{ matrix.classa }}-\${{ matrix.classb }}
-          path: results/
+          name: scan-\${{ matrix.classa }}-\${{ steps.scan.outputs.classb }}-1
+          path: artifacts/scan-\${{ matrix.classa }}-\${{ steps.scan.outputs.classb }}-1.tar
+          if-no-files-found: error
 
+EOF
+        done
+        cat <<EOF
   aggregate:
-    needs: scan
+    needs:
+EOF
+        for wave in $(seq 0 15); do
+            printf '      - scan_wave_%s\n' "$wave"
+        done
+        cat <<EOF
     runs-on: ubuntu-latest
+    concurrency:
+      group: result-publisher
+      queue: max
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
@@ -53,69 +148,25 @@ jobs:
       - uses: actions/download-artifact@v7
         with:
           pattern: scan-*
-          merge-multiple: true
-          path: downloaded/
-      - name: stage render tool
-        run: |
-          mkdir -p /tmp/render-tool
-          cp tools/csv2bin.py /tmp/render-tool/
-      - name: commit scan result to result branch
+          merge-multiple: false
+          path: incoming-artifacts/
+      - name: publish validated result snapshot
         env:
           GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git config user.email "actions@github.com"
-          git config user.name "github-actions"
-          for i in \$(seq 1 20); do
-            git fetch origin result || true
-            git rebase --abort 2>/dev/null || true
-            git merge --abort 2>/dev/null || true
-            mv downloaded /tmp/downloaded-scans
-            if git rev-parse --verify origin/result >/dev/null 2>&1; then
-              git checkout -B result origin/result
-              git reset --hard origin/result
-            else
-              git checkout -B result
-            fi
-            rm -rf downloaded
-            mv /tmp/downloaded-scans downloaded
-            mkdir -p results
-            for ca in $(seq -s ' ' "$a_start" 1 "$a_end"); do
-              find downloaded -maxdepth 1 -name "\${ca}.*.txt" -exec cat {} + | sort -t. -k2,2n -k3,3n > "results/\${ca}.txt"
-            done
-            git add results/*.txt
-            git commit -m "aggregate class A $a_start-$a_end" || echo "nothing new"
-            git push origin "HEAD:refs/heads/result" && break
-            sleep 3
-          done
-      - uses: actions/upload-artifact@v7
-        with:
-          name: classa-$g
-          path: results/*.txt
-      - name: render bin + manifest
-        env:
-          GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git config user.email "actions@github.com"
-          git config user.name "github-actions"
-          for i in \$(seq 1 20); do
-            git fetch origin result || true
-            git rebase --abort 2>/dev/null || true
-            git merge --abort 2>/dev/null || true
-            rm -rf results
-            if git rev-parse --verify origin/result >/dev/null 2>&1; then
-              git checkout -B result origin/result
-              git reset --hard origin/result
-              git clean -fd
-            else
-              git checkout -B result
-            fi
-            python3 /tmp/render-tool/csv2bin.py ./results --out .
-            git add '*.bin' manifest.json
-            git commit -m "render bin + manifest" || echo "nothing new"
-            git push origin "HEAD:refs/heads/result" && break
-            sleep 3
-          done
+        run: >-
+          ./bin/publish-result.sh
+          --artifacts incoming-artifacts
+          --class-a-start \${{ inputs.class_a }}
+          --class-a-end \${{ inputs.class_a }}
+          --class-b-block-start \${{ inputs.class_b_block_start }}
+          --count 1
+          --run-id \${{ github.run_id }}
+          --run-number \${{ github.run_number }}
+          --run-attempt \${{ github.run_attempt }}
+          --policy config/exclusions.json
+          --retries 5
 EOF
+    } > "$outdir/$g.yml"
 done
 
 echo "generated 16 workflow files in $outdir/"

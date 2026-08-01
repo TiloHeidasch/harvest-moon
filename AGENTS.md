@@ -8,36 +8,35 @@ pro `/24` einen Helligkeitswert (Host-Anzahl) — ausgeliefert als `.bin`
 
 - **16 Workflows** (`.github/workflows/0.yml` … `15.yml`), jeder deckt **16 aufeinanderfolgende
   Class A** ab (Workflow `g` = Class A `g*16` … `g*16+15`, also `0.yml` → 0–15, `15.yml` → 240–255).
-- Jeder Workflow hat eine **2D-Matrix aus 16×4 = 64 Jobs** (`classa: [g*16…g*16+15]`,
-  `classb: [0,64,128,192]`). (Vorher 16×16 = 256 Jobs; reduziert, um den apt-Overhead
-  pro Job zu vervierfachen zu senken.)
-- Jeder Job ruft `scan-classb.sh <classa> <classb_start> [<count>]` auf → scannt **64 Class B** (`classb_start` … `classb_start+63`). `count` ist optional (Default 8).
-- Jeder Class-B-Scan wird in **256 parallele `/24`-Scans** zerlegt (`&` + `wait`).
-  → **16384 parallele nmap-Prozesse** pro Job (Test-Konfiguration; Risiko der
-  Oversubscription bewusst akzeptiert).
-- Ergebnis pro Job: 64 Dateien `results/<classa>.<classb>.txt` (eine pro Class B).
-- **Aggregate-Job** (im gleichen Workflow, `needs: scan`): lädt alle Scan-Artifacts
-  (`scan-*-`), konkateniert + sortiert sie pro Class A zu `results/<classa>.txt`
-  (16 Dateien pro Workflow) und pusht auf den `result`-Branch.
-
-**Performance:** ~1:24 pro Job (16 Class B via 4096 parallele `/24`), also
-~3 min pro Class A bei 20er-Concurrency. Pro Workflow (16 Class A) laufen
-256 Jobs, verteilt über mehrere Waves (~13 bei 20er-Concurrency).
-
-**Performance (neue 64-Job-Konfiguration):** ~5–6 min pro Job (64 Class B via
-16384 parallele `/24`), also ~5–6 min pro Class A bei 20er-Concurrency. Pro
-Workflow (16 Class A) laufen 64 Jobs, verteilt über ~4 Waves (20er-Concurrency).
-apt-Overhead sinkt auf ¼ (64 statt 256 Installs pro Workflow).
+- Ein manueller Lauf wählt genau **eine Class A** aus dem 16er-Bereich seines Workflows
+  und einen 64-Class-B-Block ab `0`, `64`, `128` oder `192`. Die 64 Zellen laufen in
+  16 dependency-gated Scan-Waves mit je vier Class-B-Offsets (`0…3`); jede Wave
+  wartet auf die vorige. Die laufende Parallelität ist per Dispatch auf 1 oder 2
+  begrenzt (Standard 1), sodass keine Matrixzelle länger als 24 Stunden hinter
+  `max-parallel` wartet.
+- Jeder Job ruft `scan-classb.sh <classa> <classb> 1` auf. Der Executor bleibt intern
+  hart begrenzt; der Workflow verwendet geprüft `SCAN_WORKERS=4`,
+  `NMAP_MAX_RATE=25`, `NMAP_TIMEOUT_SECONDS=120`, `SCAN_ATTEMPTS=2` und
+  `SCAN_RETRY_DELAY=1`.
+- Ergebnis pro Job ist genau ein atomisches Archiv
+  `artifacts/scan-<classa>-<classb>-1.tar` mit `results/`- und
+  `coverage/`-Fragmenten.
+- **Aggregate-Job** (im gleichen Workflow, `needs: scan_wave_0…scan_wave_15`) lädt die Archive ohne
+  Überlappungs-Merge und ruft genau einmal `bin/publish-result.sh` auf. Der
+  Publisher baut einen frischen `origin/result`-Snapshot, validiert alle Zellen,
+  erzeugt kanonische Coverage/Binaries/Manifest-Dateien und pusht höchstens
+  einen Commit.
 
 ## scan-classb.sh
 
 ```bash
-./scan-classb.sh 8 0     # scannt 8.0.0.0/16 – 8.7.0.0/16  (2048 parallel /24)
-./scan-classb.sh 8 248   # scannt 8.248.0.0/16 – 8.255.0.0/16
+./scan-classb.sh 8 0 1     # scans 8.0.0.0/24 (256 hosts)
+./scan-classb.sh 8 248 1   # scans 8.248.0.0/24 (256 hosts)
 ```
 
 Zerlegt das `/16` (65536 IPs) in 256 × `/24` (je 256 IPs) und feuert
-sie parallel ab. Jeder Job deckt 16 Class B ab.
+sie innerhalb der gebundenen Worker-Anzahl parallel ab. Ein Workflow-Job deckt
+genau eine Class B ab.
 
 Reservierte Bereiche (10/8, 127/8, 172.16/12, 192.168/16, 224+/3) werden
 übersprungen.
@@ -46,14 +45,16 @@ Reservierte Bereiche (10/8, 127/8, 172.16/12, 192.168/16, 224+/3) werden
 ```
 nmap -sn -n -T5 --max-rtt-timeout 200ms \
     --max-retries 1 --host-timeout 300ms \
-    --min-hostgroup 65536
+    --min-hostgroup 256
 ```
 - `--max-retries 1` — ein Retry fängt Packet-Loss ab (0 Retries verpasst alive-Hosts)
 - `--host-timeout 300ms` — Host raus, wenn nicht innerhalb 300 ms geantwortet
 - `--max-rtt-timeout 200ms` — einzelner Probe-Timeout
 
-**Output** (in `results/`):
+**Output** (im atomaren Archiv):
 - `<classa>.<classb>.txt` — `/24-Counts` (`classa.classb.classc.0,anzahl`)
+- `coverage/<classa>.<classb>.json` — ein 256-Zeichen-Fragment mit `S`, `Z`,
+  oder `E`.
 
 ## bin/generate-workflows.sh
 
@@ -65,9 +66,15 @@ Template einfach neu ausführen:
 ```
 
 Jede `N.yml` (N = 0…15) enthält:
-- Matrix `classa: [N*16…N*16+15]`, `classb: [0,64,128,192]` (16×4 = 64 Jobs)
-- `scan`-Job: ruft `scan-classb.sh <classa> <classb_start> 64` auf
-- `aggregate`-Job: mergt Artifacts (`scan-*`) → 16× `results/<classa>.txt` → push auf `result`-Branch
+- eine Class-A-Auswahl aus `N*16…N*16+15`, eine Block-Auswahl (`0`, `64`, `128`,
+  `192`) und 16 abhängige Scan-Waves mit je `classb_offset: [0,1,2,3]`
+  (insgesamt 64 Jobs; die tatsächliche Class B ist Blockstart plus Wave-Basis
+  plus Offset)
+- je Wave einen Scan-Job: berechnet die kanonische Class B aus Blockstart und
+  Offset in Bash und ruft `scan-classb.sh <classa> <classb> 1` auf
+- einen `aggregate`-Job, der alle 16 Waves benötigt, die Tar-Envelope-Archive
+  getrennt lädt und genau einmal
+  `bin/publish-result.sh` für den `result`-Branch auf
 
 ## Bild-Hierarchie
 
@@ -112,37 +119,60 @@ y_global = ay * 256 + y_in_classA
 
 ## CI (`.github/workflows/*.yml`)
 
-Getriggert durch `workflow_dispatch`. Pro 16 Class A ein Workflow.
+Nur durch `workflow_dispatch` aus dem Default-Branch ausgelöst. Es gibt keinen
+automatischen Zeitplan. Vor dem Start müssen die exakte Bestätigung
+`I_HAVE_WRITTEN_AUTHORIZATION`, die geschriebene Provider-Erlaubnis und die
+Freigaben des geschützten GitHub-Environments `internet-scan` vorliegen; diese
+Environment-/Provider-Freigaben sind operative Voraussetzungen und werden
+nicht vom Repository simuliert.
 
-Nutzt `nmap -sn` (TCP-SYN, da ICMP auf GitHub blockiert ist) und
-`imagemagick` für PNG-Generierung.
+Nutzt `nmap -sn` (TCP-SYN, da ICMP auf GitHub blockiert ist). Die Seite rendert
+die Binärdaten client-seitig; CI erzeugt keine PNG-Dateien.
 
 ### Scan-Modus
-16 Workflows (0.yml – 15.yml), jeder mit 16×4 = 64 Matrix-Jobs (2D-Matrix
-`classa` × `classb: [0,64,128,192]`). Jeder Job scannt 64 Class B via 16384
-parallele `/24`-Scans (Test-Konfiguration; Oversubscription-Risiko akzeptiert).
-→ **~5–6 min pro Job**, also ~5–6 min pro Class A bei 20er-Concurrency.
+16 Workflows (0.yml – 15.yml), jeder mit einer Auswahl aus 16 Class A. Ein Lauf
+wählt genau eine davon und einen 64-Class-B-Block (`0`, `64`, `128` oder `192`)
+und erzeugt 16 dependency-gated Scan-Wave-Jobs mit je vier Matrix-Zellen
+(`classa: [selected]` × `classb_offset: [0,1,2,3]`); jeder Job scannt genau eine
+Class B. Jede Wave wartet auf die vorige. Die Matrix ist über die Dispatch-Auswahl
+sicher auf 1 oder 2 parallele Jobs begrenzt (Standard 1), sodass keine Zelle
+länger als 24 Stunden hinter `max-parallel` wartet.
+Der Job läuft höchstens 360 Minuten. Bei zwei Versuchen dauert ein worst-case
+Class-B-Job nach der konservativen Planung etwa 257 Minuten; die letzte Zelle
+einer Wave beginnt bei Parallelität 1 nach etwa `3 × 257 = 771 Minuten`
+(12,85 Stunden), die Wave endet nach `4 × 257 = 1.028 Minuten` (17,1 Stunden).
+Alle 16 Waves dauern damit bei Parallelität 1 etwa `16 × 17,1 = 274 Stunden`
+(11,4 Tage), bei 2 etwa 5,7 Tage, jeweils unter dem 35-Tage-Limit. Die Workflow- und
+Executor-Bounds ergeben höchstens `2 × 4 × 25 = 200` Pakete/s repositoryweit.
+Die Workflows setzen ausdrücklich `SCAN_WORKERS=4`, `NMAP_MAX_RATE=25`,
+`NMAP_TIMEOUT_SECONDS=120`, `SCAN_ATTEMPTS=2` und `SCAN_RETRY_DELAY=1`; diese
+Werte überschreiten die festen Executor-Hard-Caps nicht.
 
-### Aggregation (`aggregate`-Job pro Workflow)
-- lädt alle `scan-*`-Artifacts (`merge-multiple: true`)
-- pro Class A: `cat … | sort -t. -k2,2n -k3,3n > results/<classa>.txt`
-  (logisch sortiert nach Class B, dann Class C; 16 Dateien pro Workflow)
-- pusht auf `result`-Branch (GitHub als Storage, Rebase-Retry bei Konflikten)
-- zusätzlich Artifact `classa-<N>` (alle `results/*.txt` des Workflows) für sofortige Weiterverarbeitung
+Die workflowweite Concurrency-Gruppe `authorized-internet-scan` verwendet
+`queue: max` und `cancel-in-progress: false`, damit manuelle Läufe den
+Packet-Budget nicht multiplizieren. Der geschützte `internet-scan`-Environment
+muss in GitHub so konfiguriert sein, dass seine Deployment-Branch-Regel nur den
+Default-Branch erlaubt. Provider-Erlaubnis und Environment-Freigabe bleiben
+manuelle operative Voraussetzungen.
 
-### Render (implementiert)
-- Der Render-Schritt ist in jeden `N.yml`-Workflow integriert (Job `aggregate`,
-  Schritt `render bin + manifest`). Nachdem der Scan-Aggregat sein
-  `results/<classa>.txt` auf den `result`-Branch gepusht hat, lädt der
-  Render-Schritt den gesamten `result`-Branch (via `git archive`), konvertiert
-  alle `results/*.txt` mit `tools/csv2bin.py` zu:
-  - `<classa>.bin` — 65536 Bytes, ein Byte pro /24 (Offset = B*256 + C)
-  - `manifest.json` — JSON-Array der Class-A-Nummern mit Daten
-  und pusht beides zurück auf den `result`-Branch (Repo-Root, neben `results/*.txt`).
-  Es gibt keinen separaten `render.yml`-Workflow mehr (cron entfernt).
-- `tools/csv2bin.py`: Input `results/*.txt` (Format `A.B.C.0,COUNT`) →
-  Output `<classa>.bin` + `manifest.json` (siehe oben).
-- Die Webseite (`site/app.js`) lädt `manifest.json` + `<classa>.bin` per
+### Publisher (`aggregate`-Job pro Workflow)
+- lädt alle `scan-*`-Artifacts in getrennte Unterverzeichnisse (kein
+  `merge-multiple`-Overwrite)
+- validiert exakt eine Tar-Datei pro `(Class A, Class-B-Start)` und alle sicheren
+  Tar-Pfade, Rows, Coverage-Zustände und Provenienzwerte
+- schreibt `results/<A>.txt`, `coverage/<A>.json`, `policy/sha256-<digest>.json`,
+  `<A>.bin` und `manifest.json` in einem Snapshot; veraltete numerische Binaries
+  und alte `downloaded/`-Reste werden entfernt
+- verwendet die gemeinsame, nicht abbrechende Concurrency-Gruppe
+  `result-publisher` mit `queue: max`, erstellt höchstens einen Commit und baut
+  nach einem Push-Reject von der neuesten Result-Branch-Spitze neu auf.
+
+`tools/csv2bin.py` akzeptiert weiterhin `results/*.txt`, lehnt unklare oder
+konfligierende Rows strikt ab und erzeugt deterministisch `<A>.bin` (65536
+Bytes) sowie ein versioniertes `manifest.json`. Für ein vorhandenes Raw-File
+ohne `coverage/<A>.json` ist der Manifest-Status ausdrücklich `U` (unverified).
+
+Die Webseite (`site/app.js`) lädt `manifest.json` + `<classa>.bin` per
   `raw.githubusercontent.com/<owner>/<repo>/result/` und rendert client-seitig
   per Canvas/Heatmap (kein imagemagick, keine PNG-Erzeugung in CI).
 

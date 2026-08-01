@@ -70,6 +70,15 @@ kbd {
 
 main { padding: 1rem 1.25rem 2rem; }
 
+.load-message {
+  margin: 0 0 1rem;
+  padding: .75rem 1rem;
+  border-radius: 8px;
+  line-height: 1.45;
+}
+.load-error { color: #ffd9d2; background: #3a171c; border: 1px solid #a34a4a; }
+.load-warning { color: #ffe9b0; background: #332711; border: 1px solid #92702d; }
+
 .content {
   display: flex;
   gap: 1.25rem;
