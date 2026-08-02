@@ -1,0 +1,130 @@
+{
+  "policy_name": "harvest-moon-ipv4-special-purpose",
+  "policy_version": "2.0.0",
+  "policy_digest": "sha256:d1adfbacca61dd1ee22cc619a8732e1cab2401faada74c68b7dea14655e34193",
+  "schema_version": 2,
+  "source_date": "2026-07-31",
+  "scope": {
+    "criterion": "Exclude every IANA IPv4 Special-Purpose Address Registry entry whose Global flag is False, at whole-/24 granularity.",
+    "granularity": "whole-/24-conservative",
+    "registry": "IANA IPv4 Special-Purpose Address Registry",
+    "registry_field": "Global",
+    "routable_exceptions_are_explicit": true
+  },
+  "source_urls": [
+    "https://www.iana.org/assignments/iana-ipv4-special-registry/iana-ipv4-special-registry.xhtml",
+    "https://www.rfc-editor.org/rfc/rfc6890"
+  ],
+  "safe_routable_exceptions": [
+    {
+      "cidr": "192.31.196.0/24",
+      "id": "as112-v4",
+      "rationale": "IANA marks this special-purpose service range globally reachable and routable; it is explicitly retained for authorized scanning.",
+      "source": "IANA IPv4 Special-Purpose Address Registry"
+    },
+    {
+      "cidr": "192.52.193.0/24",
+      "id": "amt",
+      "rationale": "IANA marks this special-purpose range globally reachable and routable; it is explicitly retained for authorized scanning.",
+      "source": "IANA IPv4 Special-Purpose Address Registry"
+    },
+    {
+      "cidr": "192.175.48.0/24",
+      "id": "as112-v6",
+      "rationale": "IANA marks this special-purpose service range globally reachable and routable; it is explicitly retained for authorized scanning.",
+      "source": "IANA IPv4 Special-Purpose Address Registry"
+    }
+  ],
+  "rules": [
+    {
+      "cidr": "0.0.0.0/8",
+      "id": "this-network",
+      "rationale": "This network is not globally routed",
+      "source": "IANA IPv4 Special-Purpose Address Registry"
+    },
+    {
+      "cidr": "10.0.0.0/8",
+      "id": "rfc1918-private",
+      "rationale": "Private-use address space",
+      "source": "RFC 1918"
+    },
+    {
+      "cidr": "100.64.0.0/10",
+      "id": "shared-address-space",
+      "rationale": "Shared address space for carrier-grade NAT",
+      "source": "RFC 6598"
+    },
+    {
+      "cidr": "127.0.0.0/8",
+      "id": "loopback",
+      "rationale": "Local host loopback space",
+      "source": "RFC 1122"
+    },
+    {
+      "cidr": "169.254.0.0/16",
+      "id": "link-local",
+      "rationale": "IPv4 link-local autoconfiguration",
+      "source": "RFC 3927"
+    },
+    {
+      "cidr": "172.16.0.0/12",
+      "id": "rfc1918-private",
+      "rationale": "Private-use address space",
+      "source": "RFC 1918"
+    },
+    {
+      "cidr": "192.168.0.0/16",
+      "id": "rfc1918-private",
+      "rationale": "Private-use address space",
+      "source": "RFC 1918"
+    },
+    {
+      "cidr": "192.0.0.0/24",
+      "id": "protocol-assignments",
+      "rationale": "IETF protocol assignments and infrastructure",
+      "source": "IANA IPv4 Special-Purpose Address Registry"
+    },
+    {
+      "cidr": "192.0.2.0/24",
+      "id": "documentation-1",
+      "rationale": "Documentation and examples",
+      "source": "RFC 5737"
+    },
+    {
+      "cidr": "192.88.99.0/24",
+      "id": "deprecated-6to4-relay-anycast",
+      "rationale": "Deprecated 6to4 relay anycast space is not globally reachable; conservative whole-/24 exclusion",
+      "source": "IANA IPv4 Special-Purpose Address Registry; RFC 7526"
+    },
+    {
+      "cidr": "198.18.0.0/15",
+      "id": "benchmarking",
+      "rationale": "Network interconnect device benchmarking",
+      "source": "RFC 2544"
+    },
+    {
+      "cidr": "198.51.100.0/24",
+      "id": "documentation-2",
+      "rationale": "Documentation and examples",
+      "source": "RFC 5737"
+    },
+    {
+      "cidr": "203.0.113.0/24",
+      "id": "documentation-3",
+      "rationale": "Documentation and examples",
+      "source": "RFC 5737"
+    },
+    {
+      "cidr": "224.0.0.0/4",
+      "id": "multicast",
+      "rationale": "IPv4 multicast space",
+      "source": "RFC 1112"
+    },
+    {
+      "cidr": "240.0.0.0/4",
+      "id": "reserved-future-use",
+      "rationale": "Reserved and future-use space",
+      "source": "RFC 1112; RFC 1812"
+    }
+  ]
+}
